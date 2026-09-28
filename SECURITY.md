@@ -7,6 +7,7 @@ FrameSense AI renders a temporary JPEG derivative in Lightroom and sends it dire
 The intended request includes:
 
 - the temporary JPEG pixels;
+- the image's filename (not its folder path);
 - the photographer-approved Project context;
 - locally retained approved vocabulary for the active Learning profile; and
 - only when explicitly enabled, immediate folder and parent-folder **labels** for the selected image.

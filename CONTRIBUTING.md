@@ -12,9 +12,10 @@ FrameSense AI is an early Lightroom Classic plug-in. Small, reviewable changes w
 
 ## Testing
 
-Run the mocked tests when a compatible Lua runtime is available:
+Run the mocked tests with Lua 5.1 (the Lua version Lightroom Classic embeds). They can be run from any directory:
 
 ```sh
+lua tests/core.lua
 lua tests/preferences.lua
 lua tests/dialogs.lua
 ```

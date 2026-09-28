@@ -1,13 +1,34 @@
 local LrHttp = import 'LrHttp'
+local LrTasks = import 'LrTasks'
 local Json = require 'Json'
 local Util = require 'Util'
 
 local Client = {}
 
+local requestTimeoutSeconds = 120
+local retryDelaysSeconds = { 3, 8 }
+local retryableStatus = { [429] = true, [500] = true, [502] = true, [503] = true, [504] = true }
+
 local function providerError(response, headers)
-    local status = headers and headers.status or 'unknown'
-    local detail = tostring(response or ''):gsub('%s+', ' '):sub(1, 300)
+    local status = headers and (headers.status or headers.error and headers.error.name) or 'no response'
+    local detail = tostring(response or (headers and headers.error and headers.error.errorCode) or ''):gsub('%s+', ' '):sub(1, 300)
     error('Provider request failed (HTTP ' .. tostring(status) .. '): ' .. detail)
+end
+
+-- LrHttp expects headers as an array of { field =, value = } tables, not a map.
+local function post(url, body, headerMap)
+    local headers = {}
+    for field, value in pairs(headerMap) do table.insert(headers, { field = field, value = value }) end
+    local encoded = Json.encode(body)
+    local response, responseHeaders
+    for attempt = 1, #retryDelaysSeconds + 1 do
+        response, responseHeaders = LrHttp.post(url, encoded, headers, 'POST', requestTimeoutSeconds)
+        local status = responseHeaders and responseHeaders.status
+        if status and status >= 200 and status < 300 then return Json.decode(response) end
+        if not (status and retryableStatus[status]) or attempt > #retryDelaysSeconds then break end
+        LrTasks.sleep(retryDelaysSeconds[attempt])
+    end
+    providerError(response, responseHeaders)
 end
 
 local function extractObject(text)
@@ -21,10 +42,15 @@ local function safeString(value)
     return Util.trim(type(value) == 'string' and value or '')
 end
 
+local function list(value)
+    if type(value) == 'string' then return Util.split(value, ',') end
+    return type(value) == 'table' and value or {}
+end
+
 function Client.normalise(result)
     if type(result) ~= 'table' then error('Invalid analysis response.') end
     local keywords = {}
-    for _, keyword in ipairs(result.keywords or {}) do
+    for _, keyword in ipairs(list(result.keywords)) do
         keyword = safeString(keyword)
         if keyword ~= '' then table.insert(keywords, keyword) end
     end
@@ -33,8 +59,8 @@ function Client.normalise(result)
     while #keywords > 12 do table.remove(keywords) end
     local description = Util.clip(safeString(result.description), 255)
     if description == '' then error('The provider returned no usable description.') end
-    local portfolio = result.portfolio or {}
-    local score = math.max(1, math.min(5, tonumber(portfolio.score) or 3))
+    local portfolio = type(result.portfolio) == 'table' and result.portfolio or {}
+    local score = math.floor(math.max(1, math.min(5, tonumber(portfolio.score) or 3)) + 0.5)
     local labels = { [1] = 'Reject candidate', [2] = 'Needs review', [3] = 'Supporting', [4] = 'Portfolio', [5] = 'Hero' }
     return {
         title = safeString(result.title),
@@ -46,10 +72,16 @@ function Client.normalise(result)
             score = score,
             label = labels[score],
             recommendedUse = safeString(portfolio.recommended_use),
-            strengths = Util.unique(portfolio.strengths or {}),
-            cautions = Util.unique(portfolio.cautions or {}),
+            strengths = Util.unique(list(portfolio.strengths)),
+            cautions = Util.unique(list(portfolio.cautions)),
         },
     }
+end
+
+-- GPT-5 and o-series reasoning models reject any temperature other than the default.
+function Client.acceptsTemperature(model)
+    model = string.lower(model or '')
+    return not (model:match('^gpt%-5') or model:match('^o%d'))
 end
 
 function Client.analyse(settings, imageBase64, context)
@@ -62,31 +94,36 @@ function Client.analyse(settings, imageBase64, context)
             generationConfig = { temperature = settings.temperature, responseMimeType = 'application/json' },
         }
         local url = 'https://generativelanguage.googleapis.com/v1beta/models/' .. settings.geminiModel .. ':generateContent?key=' .. key
-        local response, headers = LrHttp.post(url, Json.encode(body), { ['Content-Type'] = 'application/json' })
-        if not headers or headers.status < 200 or headers.status >= 300 then providerError(response, headers) end
-        local decoded = Json.decode(response)
-        local parts = decoded.candidates and decoded.candidates[1] and decoded.candidates[1].content and decoded.candidates[1].content.parts
-        local text = parts and parts[1] and parts[1].text
-        if not text then error('Gemini returned no analysis text.') end
-        return Client.normalise(extractObject(text)), decoded.usageMetadata
+        local decoded = post(url, body, { ['Content-Type'] = 'application/json' })
+        local candidate = decoded.candidates and decoded.candidates[1]
+        local texts = {}
+        for _, part in ipairs(candidate and candidate.content and candidate.content.parts or {}) do
+            if type(part.text) == 'string' and not part.thought then table.insert(texts, part.text) end
+        end
+        if #texts == 0 then
+            local reason = candidate and candidate.finishReason or (decoded.promptFeedback and decoded.promptFeedback.blockReason)
+            error('Gemini returned no analysis text' .. (reason and (' (' .. tostring(reason) .. ')') or '') .. '.')
+        end
+        return Client.normalise(extractObject(table.concat(texts))), decoded.usageMetadata
     end
 
     local key = Util.trim(settings.openaiApiKey)
     if key == '' then error('OpenAI API key is missing. Add it in File → Plug-in Manager → FrameSense AI.') end
     local body = {
         model = settings.openaiModel,
-        temperature = settings.temperature,
         response_format = { type = 'json_object' },
         messages = {
             { role = 'system', content = settings.prompt },
             { role = 'user', content = { { type = 'text', text = context }, { type = 'image_url', image_url = { url = 'data:image/jpeg;base64,' .. imageBase64 } } } },
         },
     }
-    local response, headers = LrHttp.post('https://api.openai.com/v1/chat/completions', Json.encode(body), { ['Content-Type'] = 'application/json', ['Authorization'] = 'Bearer ' .. key })
-    if not headers or headers.status < 200 or headers.status >= 300 then providerError(response, headers) end
-    local decoded = Json.decode(response)
-    local text = decoded.choices and decoded.choices[1] and decoded.choices[1].message and decoded.choices[1].message.content
-    if not text then error('OpenAI returned no analysis text.') end
+    if Client.acceptsTemperature(settings.openaiModel) then body.temperature = settings.temperature end
+    local decoded = post('https://api.openai.com/v1/chat/completions', body, { ['Content-Type'] = 'application/json', ['Authorization'] = 'Bearer ' .. key })
+    local choice = decoded.choices and decoded.choices[1]
+    local text = choice and choice.message and choice.message.content
+    if type(text) ~= 'string' or text == '' then
+        error('OpenAI returned no analysis text' .. (choice and choice.finish_reason and (' (' .. tostring(choice.finish_reason) .. ')') or '') .. '.')
+    end
     return Client.normalise(extractObject(text)), decoded.usage
 end
 

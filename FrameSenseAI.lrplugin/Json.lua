@@ -4,12 +4,14 @@ local Json = {}
 local function utf8char(code)
     if code < 128 then return string.char(code) end
     if code < 2048 then return string.char(192 + math.floor(code / 64), 128 + (code % 64)) end
-    return string.char(224 + math.floor(code / 4096), 128 + (math.floor(code / 64) % 64), 128 + (code % 64))
+    if code < 65536 then return string.char(224 + math.floor(code / 4096), 128 + (math.floor(code / 64) % 64), 128 + (code % 64)) end
+    return string.char(240 + math.floor(code / 262144), 128 + (math.floor(code / 4096) % 64), 128 + (math.floor(code / 64) % 64), 128 + (code % 64))
 end
 
 local function escape(value)
     value = tostring(value or '')
     value = value:gsub('\\', '\\\\'):gsub('"', '\\"'):gsub('\b', '\\b'):gsub('\f', '\\f'):gsub('\n', '\\n'):gsub('\r', '\\r'):gsub('\t', '\\t')
+    value = value:gsub('%c', function(char) return string.format('\\u%04x', string.byte(char)) end)
     return '"' .. value .. '"'
 end
 
@@ -53,7 +55,13 @@ function Json.decode(text)
                 if escaped == 'u' then
                     local code = tonumber(text:sub(index + 2, index + 5), 16)
                     if not code then error('Invalid JSON unicode escape') end
-                    table.insert(output, utf8char(code)); index = index + 6
+                    index = index + 6
+                    local low = code >= 0xD800 and code <= 0xDBFF and text:sub(index, index + 1) == '\\u' and tonumber(text:sub(index + 2, index + 5), 16)
+                    if low and low >= 0xDC00 and low <= 0xDFFF then
+                        code = 0x10000 + (code - 0xD800) * 0x400 + (low - 0xDC00)
+                        index = index + 6
+                    end
+                    table.insert(output, utf8char(code))
                 elseif map[escaped] then table.insert(output, map[escaped]); index = index + 2
                 else error('Invalid JSON escape') end
             end

@@ -8,6 +8,7 @@ local LrPathUtils = import 'LrPathUtils'
 local LrPrefs = import 'LrPrefs'
 local LrProgressScope = import 'LrProgressScope'
 local LrStringUtils = import 'LrStringUtils'
+local LrSystemInfo = import 'LrSystemInfo'
 local LrTasks = import 'LrTasks'
 local LrView = import 'LrView'
 
@@ -49,12 +50,31 @@ local function preflight(photos, context)
     property.saveKeywords = prefs.saveKeywords
     property.saveDescription = prefs.saveDescription
     property.generatePortfolio = prefs.generatePortfolio
-    property.learningSummary = tostring(#LearningStore.get(prefs.learningProfile)) .. ' approved vocabulary terms remembered locally'
 
     local labelWidth = 22
     local function help(title, message)
         return f:push_button { title = '?', width = 24, action = function() LrDialogs.message(title, message, 'info') end }
     end
+    local function label(title)
+        return f:static_text { title = title, width_in_chars = labelWidth, alignment = 'right' }
+    end
+    local function modelChoices(provider)
+        local choices = {}
+        for _, model in ipairs(Defaults.models) do
+            if model.provider == provider then table.insert(choices, model.value) end
+        end
+        return choices
+    end
+    local learningSummary = bind {
+        key = 'learningProfile',
+        transform = function(profile)
+            if Util.trim(profile) == '' then return 'Enter a project / property name to remember your approved keywords for next time.' end
+            local count = #LearningStore.get(profile)
+            if count == 0 then return 'New project name: approved keywords will be remembered locally after you save.' end
+            return count .. ' approved vocabulary terms remembered locally for this project.'
+        end,
+    }
+    local temperatureText = bind { key = 'temperature', transform = function(value) return string.format('%.2f', tonumber(value) or 0) end }
 
     local dialog = f:column {
         bind_to_object = property,
@@ -63,13 +83,13 @@ local function preflight(photos, context)
         f:group_box { title = 'Project details',
             f:column { spacing = f:control_spacing(),
                 f:row {
-                    f:static_text { title = 'Project / property name', width_in_chars = labelWidth },
+                    label('Project / property name'),
                     f:edit_field { value = bind 'learningProfile', width_in_chars = 66 },
                     help('Project / property name', 'Use one stable name for this property or assignment. Approved keyword corrections are remembered locally under this name.'),
                 },
                 f:row {
-                    f:static_text { title = 'Project context', width_in_chars = labelWidth, alignment = 'right' },
-                    f:edit_field { value = bind 'projectContext', width_in_chars = 78, height_in_lines = 3 },
+                    label('Project context'),
+                    f:edit_field { value = bind 'projectContext', width_in_chars = 66, height_in_lines = 3 },
                     help('Project context', 'Confirmed facts such as property, location, official venue names or design information. FrameSense will not infer these facts from appearance.'),
                 },
                 f:row {
@@ -78,11 +98,11 @@ local function preflight(photos, context)
                     help('Folder-name hints', 'Uses only the immediate folder and its parent as optional naming hints. Full file paths are never sent.'),
                 },
                 f:row {
-                    f:static_text { title = 'Detected folder names', width_in_chars = labelWidth },
-                    f:static_text { title = bind 'folderPreview', width_in_chars = 78, height_in_lines = 2 },
+                    label('Detected folder names'),
+                    f:static_text { title = bind 'folderPreview', enabled = bind 'folderHints', width_in_chars = 66, height_in_lines = 2 },
                 },
                 f:row {
-                    f:static_text { title = 'Shared keywords', width_in_chars = labelWidth },
+                    label('Shared keywords'),
                     f:edit_field { value = bind 'sharedTags', width_in_chars = 66 },
                     help('Shared keywords', 'Optional confirmed keywords added to every saved image in this batch, separated by commas.'),
                 },
@@ -97,20 +117,26 @@ local function preflight(photos, context)
                 help('Portfolio suggestion', 'A visible-image selection aid, not a full-resolution technical-quality assessment. You remain in control of Lightroom ratings.'),
             },
         },
-        f:static_text { title = bind 'learningSummary' },
+        f:static_text { title = learningSummary, width_in_chars = 90 },
         f:checkbox { value = bind 'showAdvanced', title = 'Show advanced settings' },
         f:group_box { title = 'Advanced settings', visible = bind 'showAdvanced',
             f:column { spacing = f:control_spacing(),
-                f:row { f:static_text { title = 'AI provider', width_in_chars = labelWidth }, f:popup_menu { value = bind 'provider', items = { { title = 'Google Gemini', value = 'gemini' }, { title = 'OpenAI', value = 'openai' } } } },
-                f:row { f:static_text { title = 'Gemini model', width_in_chars = labelWidth }, f:edit_field { value = bind 'geminiModel', width_in_chars = 42 } },
-                f:row { f:static_text { title = 'OpenAI model', width_in_chars = labelWidth }, f:edit_field { value = bind 'openaiModel', width_in_chars = 42 } },
-                f:row { f:static_text { title = 'Creativity', width_in_chars = labelWidth }, f:static_text { title = 'Consistent' }, f:slider { value = bind 'temperature', min = 0, max = 1, width_in_chars = 20 }, f:static_text { title = 'Varied' }, help('Creativity', 'Lower values give more consistent factual wording. Higher values create more variation and may need more correction.') },
-                f:row { f:static_text { title = 'Request pace (ms)', width_in_chars = labelWidth }, f:edit_field { value = bind 'batchDelayMs', width_in_chars = 10 } },
-                f:row { f:static_text { title = 'Analysis prompt', width_in_chars = labelWidth, alignment = 'right' }, f:edit_field { value = bind 'analysisPrompt', width_in_chars = 82, height_in_lines = 11 }, help('Analysis prompt', 'The detailed instruction sent to the selected AI provider. Edit only when you want to change the output rules.') },
-                f:push_button { title = 'Restore standard prompt', action = function() property.analysisPrompt = Defaults.defaultPrompt end },
+                f:row { label('AI provider'), f:popup_menu { value = bind 'provider', items = { { title = 'Google Gemini', value = 'gemini' }, { title = 'OpenAI', value = 'openai' } } } },
+                f:row {
+                    label('Model'),
+                    f:view { place = 'overlapping',
+                        f:combo_box { value = bind 'geminiModel', items = modelChoices('gemini'), width_in_chars = 42, visible = LrBinding.keyEquals('provider', 'gemini') },
+                        f:combo_box { value = bind 'openaiModel', items = modelChoices('openai'), width_in_chars = 42, visible = LrBinding.keyEquals('provider', 'openai') },
+                    },
+                    help('Model', 'Pick a suggested model or type any model ID your provider account supports.'),
+                },
+                f:row { label('Creativity'), f:static_text { title = 'Consistent' }, f:slider { value = bind 'temperature', min = 0, max = 1, width_in_chars = 20 }, f:static_text { title = 'Varied' }, f:static_text { title = temperatureText, width_in_chars = 5 }, help('Creativity', 'Lower values give more consistent factual wording. Higher values create more variation and may need more correction. GPT-5 and o-series models ignore this setting.') },
+                f:row { label('Request pace (ms)'), f:edit_field { value = bind 'batchDelayMs', min = 0, max = 10000, precision = 0, width_in_chars = 10 }, help('Request pace', 'Pause between photos. Increase this if your provider reports rate-limit errors; busy or rate-limited requests are also retried automatically.') },
+                f:row { label('Analysis prompt'), f:edit_field { value = bind 'analysisPrompt', width_in_chars = 66, height_in_lines = 11 }, help('Analysis prompt', 'The detailed instruction sent to the selected AI provider. Edit only when you want to change the output rules.') },
+                f:row { label(''), f:push_button { title = 'Restore standard prompt', action = function() property.analysisPrompt = Defaults.defaultPrompt end } },
             },
         },
-        f:static_text { title = 'Privacy: only a temporary, metadata-free 1600px JPEG derivative is sent. Original paths, GPS and existing keywords are excluded.' },
+        f:static_text { title = 'Privacy: only a temporary, metadata-free 1600px JPEG derivative and its filename are sent. Folder paths, GPS and existing keywords are excluded.' },
     }
     if LrDialogs.presentModalDialog { title = 'FrameSense AI — analyse ' .. #photos .. ' photos', contents = dialog, actionVerb = 'Analyse ' .. #photos .. ' photos' } ~= 'ok' then return nil end
 
@@ -176,12 +202,34 @@ local function renderDerivative(photo, context)
     error('Lightroom did not render a temporary JPEG.')
 end
 
-local function review(records, context)
+-- Keeps the review dialog, including its buttons, on a small laptop screen.
+local function reviewSize()
+    local width, height = 1380, 700
+    local ok, displays = pcall(LrSystemInfo.displayInfo)
+    local display = ok and type(displays) == 'table' and displays[1]
+    if display and display.width and display.height then
+        width = math.max(900, math.min(width, display.width - 100))
+        height = math.max(360, math.min(height, display.height - 280))
+    end
+    return width, height
+end
+
+local function review(records, context, failureCount)
     local f = LrView.osFactory()
     local bind = LrView.bind
     local property = LrBinding.makePropertyTable(context)
     property.applyRatings = prefs.generatePortfolio and prefs.applyRatings and true or false
-    local rows = {}
+    local function updateSelectedCount()
+        local selected = 0
+        for i = 1, #records do if property['enabled' .. i] then selected = selected + 1 end end
+        property.selectedSummary = selected .. ' of ' .. #records .. ' photos selected for saving. Saving metadata and applying Lightroom ratings are separate choices.'
+    end
+    local descriptionCount = function(i)
+        return bind { key = 'description' .. i, transform = function(value)
+            local count = Util.length(Util.trim(value))
+            return count .. ' / 255 characters' .. (count > 255 and ' — will be shortened' or '')
+        end }
+    end
     local ratingItems = {
         { title = '★★★★★  Hero + Blue', value = '5' },
         { title = '★★★★☆  Portfolio + Green', value = '4' },
@@ -201,45 +249,62 @@ local function review(records, context)
         property['keywords' .. i] = table.concat(record.keywords, ', ')
         property['description' .. i] = record.description
         property['score' .. i] = tostring(record.portfolio.score)
-        local reason = table.concat(record.portfolio.strengths or {}, '; ')
-        if reason == '' then reason = record.portfolio.recommendedUse or 'Review the visible composition and usefulness.' end
-        table.insert(rows, f:group_box {
-            title = record.filename,
-            f:row {
-                f:column {
-                    f:checkbox { value = bind('enabled' .. i), title = 'Save metadata' },
-                    f:catalog_photo { photo = record.photo, width = 280, height = 187, frame_width = 1 },
-                },
-                f:column {
-                    f:static_text { title = 'Title' }, f:edit_field { value = bind('title' .. i), width_in_chars = 62 },
-                    f:static_text { title = 'Frame-specific keywords (comma-separated)' }, f:edit_field { value = bind('keywords' .. i), width_in_chars = 76, height_in_lines = 2 },
-                    f:static_text { title = 'Format image description / alt text' }, f:edit_field { value = bind('description' .. i), width_in_chars = 76, height_in_lines = 3 },
-                },
-                f:column {
-                    f:static_text { title = 'Portfolio rating' },
-                    f:popup_menu { value = bind('score' .. i), items = ratingItems, enabled = prefs.generatePortfolio, width_in_chars = 29 },
-                    f:checkbox { value = bind('ratingEnabled' .. i), enabled = prefs.generatePortfolio, title = 'Update LR rating & label' },
-                    f:static_text { title = confidenceText(record.confidence), width_in_chars = 30 },
-                    f:static_text { title = reason, width_in_chars = 30, height_in_lines = 4 },
-                },
-            },
-        })
+        property:addObserver('enabled' .. i, updateSelectedCount)
     end
-    local contents = f:column {
-        bind_to_object = property,
-        spacing = f:control_spacing(),
-        f:static_text { title = 'Review the suggestions below. Approved edits improve this project’s local vocabulary; they do not train the cloud model.' },
-        f:row {
-            f:push_button { title = 'Select all metadata', action = function() for i = 1, #records do property['enabled' .. i] = true end end },
-            f:push_button { title = 'Select none', action = function() for i = 1, #records do property['enabled' .. i] = false end end },
-            f:checkbox { value = bind 'applyRatings', enabled = prefs.generatePortfolio, title = 'Apply Lightroom ratings & labels' },
-            f:push_button { title = '?', width = 24, action = function() LrDialogs.message('Lightroom ratings & labels', 'Optional portfolio-suitability suggestions:\n\n5 + Blue — Hero\n4 + Green — Portfolio\n3 + Yellow — Supporting\n2 + Red — Needs review\n1 + no label — Reject candidate\n\nUncheck the master option or an individual image to preserve its existing Lightroom rating and label. This is not a full-resolution technical-quality assessment.', 'info') end },
-            f:static_text { title = 'Uncheck to leave existing Lightroom ratings and labels unchanged.' },
-        },
-        f:scrolled_view { width = 1380, height = 700, horizontal_scroller = false, vertical_scroller = true, f:column(rows) },
-        f:static_text { title = #records .. ' of ' .. #records .. ' selected. Saving metadata and applying Lightroom ratings are separate choices.' },
-    }
-    if LrDialogs.presentModalDialog { title = 'FrameSense AI — review ' .. #records .. ' photos', contents = contents, actionVerb = 'Save selected photos' } ~= 'ok' then return nil end
+    updateSelectedCount()
+    local width, height = reviewSize()
+    local intro = 'Review the suggestions below. Approved edits improve this project’s local vocabulary; they do not train the cloud model.'
+    if (failureCount or 0) > 0 then intro = intro .. '\n' .. failureCount .. ' photo(s) could not be analysed; details are shown after this review.' end
+
+    -- Views are rebuilt for each presentation; all edits live in the property table.
+    local function buildContents()
+        local rows = {}
+        for i, record in ipairs(records) do
+            local reason = table.concat(record.portfolio.strengths or {}, '; ')
+            if reason == '' then reason = record.portfolio.recommendedUse or 'Review the visible composition and usefulness.' end
+            if #(record.portfolio.cautions or {}) > 0 then reason = reason .. '\nCheck: ' .. table.concat(record.portfolio.cautions, '; ') end
+            table.insert(rows, f:group_box {
+                title = record.filename,
+                f:row {
+                    f:column {
+                        f:checkbox { value = bind('enabled' .. i), title = 'Save metadata' },
+                        f:catalog_photo { photo = record.photo, width = 280, height = 187, frame_width = 1 },
+                    },
+                    f:column {
+                        f:static_text { title = 'Title' }, f:edit_field { value = bind('title' .. i), width_in_chars = 62 },
+                        f:static_text { title = 'Frame-specific keywords (comma-separated)' }, f:edit_field { value = bind('keywords' .. i), width_in_chars = 76, height_in_lines = 2 },
+                        f:row { f:static_text { title = 'Format image description / alt text' }, f:static_text { title = descriptionCount(i), width_in_chars = 28 } },
+                        f:edit_field { value = bind('description' .. i), width_in_chars = 76, height_in_lines = 3 },
+                    },
+                    f:column {
+                        f:static_text { title = 'Portfolio rating' },
+                        f:popup_menu { value = bind('score' .. i), items = ratingItems, enabled = prefs.generatePortfolio, width_in_chars = 29 },
+                        f:checkbox { value = bind('ratingEnabled' .. i), enabled = prefs.generatePortfolio and bind 'applyRatings' or false, title = 'Update LR rating & label' },
+                        f:static_text { title = confidenceText(record.confidence), width_in_chars = 30 },
+                        f:static_text { title = reason, width_in_chars = 30, height_in_lines = 5 },
+                    },
+                },
+            })
+        end
+        return f:column {
+            bind_to_object = property,
+            spacing = f:control_spacing(),
+            f:static_text { title = intro, width_in_chars = 120, height_in_lines = (failureCount or 0) > 0 and 2 or 1 },
+            f:row {
+                f:push_button { title = 'Select all metadata', action = function() for i = 1, #records do property['enabled' .. i] = true end end },
+                f:push_button { title = 'Select none', action = function() for i = 1, #records do property['enabled' .. i] = false end end },
+                f:checkbox { value = bind 'applyRatings', enabled = prefs.generatePortfolio, title = 'Apply Lightroom ratings & labels' },
+                f:push_button { title = '?', width = 24, action = function() LrDialogs.message('Lightroom ratings & labels', 'Optional portfolio-suitability suggestions:\n\n5 + Blue — Hero\n4 + Green — Portfolio\n3 + Yellow — Supporting\n2 + Red — Needs review\n1 + no label — Reject candidate\n\nUncheck the master option or an individual image to preserve its existing Lightroom rating and label. This is not a full-resolution technical-quality assessment.', 'info') end },
+                f:static_text { title = 'Uncheck to leave existing Lightroom ratings and labels unchanged.' },
+            },
+            f:scrolled_view { width = width, height = height, horizontal_scroller = true, vertical_scroller = true, f:column(rows) },
+            f:static_text { title = bind 'selectedSummary', width_in_chars = 120 },
+        }
+    end
+    -- The analysis has already been paid for, so Cancel/Esc asks before discarding it.
+    while LrDialogs.presentModalDialog { title = 'FrameSense AI — review ' .. #records .. ' photos', contents = buildContents(), actionVerb = 'Save selected photos' } ~= 'ok' do
+        if LrDialogs.confirm('Discard all ' .. #records .. ' AI suggestions?', 'Nothing will be saved to the catalogue. Running the analysis again will send the photos to the provider again.', 'Discard', 'Back to review') == 'ok' then return nil end
+    end
     prefs.applyRatings = prefs.generatePortfolio and property.applyRatings and true or false
     local labels = { ['1'] = 'Reject candidate', ['2'] = 'Needs review', ['3'] = 'Supporting', ['4'] = 'Portfolio', ['5'] = 'Hero' }
     for i, record in ipairs(records) do
@@ -271,11 +336,20 @@ end
 
 local function save(records)
     local catalog = LrApplication.activeCatalog()
+    local keywords = {}
+    -- returnExisting = true: without it createKeyword returns false for any keyword
+    -- already in the catalogue, and that keyword was silently not applied.
+    local function keywordFor(term)
+        local key = string.lower(term)
+        if keywords[key] == nil then keywords[key] = catalog:createKeyword(term, {}, true, nil, true) or false end
+        return keywords[key]
+    end
     catalog:withWriteAccessDo('Save FrameSense AI metadata', function()
         for _, record in ipairs(records) do
             if record.enabled then
-                if prefs.saveTitle then record.photo:setRawMetadata('title', record.title) end
-                if prefs.saveDescription then
+                -- A blank field never overwrites what is already in the catalogue.
+                if prefs.saveTitle and record.title ~= '' then record.photo:setRawMetadata('title', record.title) end
+                if prefs.saveDescription and record.description ~= '' then
                     record.photo:setRawMetadata('caption', record.description)
                     record.photo:setPropertyForPlugin(_PLUGIN, 'formatAltText', record.altText)
                 end
@@ -286,12 +360,10 @@ local function save(records)
                 end
                 record.photo:setPropertyForPlugin(_PLUGIN, 'lastRun', os.date('%Y-%m-%d %H:%M'))
                 if prefs.saveKeywords then
-                    for _, term in ipairs(Util.unique(record.keywords)) do
-                        local keyword = catalog:createKeyword(term, nil, true)
-                        if keyword then record.photo:addKeyword(keyword) end
-                    end
-                    for _, term in ipairs(Util.split(prefs.sharedTags, ',')) do
-                        local keyword = catalog:createKeyword(term, nil, true)
+                    local terms = Util.unique(record.keywords)
+                    for _, term in ipairs(Util.split(prefs.sharedTags, ',')) do table.insert(terms, term) end
+                    for _, term in ipairs(Util.unique(terms)) do
+                        local keyword = keywordFor(term)
                         if keyword then record.photo:addKeyword(keyword) end
                     end
                 end
@@ -302,24 +374,54 @@ local function save(records)
             end
         end
     end)
-    LearningStore.remember(prefs.learningProfile, records)
+    if prefs.saveKeywords then LearningStore.remember(prefs.learningProfile, records) end
 end
 
+local maxBatch = 50
+
+local function namesList(names)
+    local shown = {}
+    for i = 1, math.min(#names, 8) do shown[i] = '• ' .. names[i] end
+    if #names > 8 then table.insert(shown, '• …and ' .. (#names - 8) .. ' more') end
+    return table.concat(shown, '\n')
+end
+
+-- Returns the eligible photos, or nil when there is nothing to do or the user cancels.
+-- Ineligible photos are skipped with the user's consent instead of blocking the whole batch.
 local function validate(photos)
-    if #photos == 0 then LrDialogs.message('FrameSense AI', 'Select one or more JPEG images in the Library first.', 'warning'); return false end
-    if #photos > 50 then LrDialogs.message('FrameSense AI', 'Select no more than 50 JPEGs per reviewed batch.', 'warning'); return false end
+    if #photos == 0 then LrDialogs.message('FrameSense AI', 'Select one or more JPEG images in the Library first.', 'warning'); return nil end
+    local eligible, notJpeg, notLocal = {}, {}, {}
     for _, photo in ipairs(photos) do
         local path = photo:getRawMetadata('path') or ''
-        if not Util.isJpeg(path) then LrDialogs.message('FrameSense AI', 'JPEGs only. RAW and non-JPEG files are intentionally refused.'); return false end
-        if not Util.localFileExists(path) then LrDialogs.message('FrameSense AI', 'One selected JPEG is not available locally. Make it offline in Dropbox before analysing.'); return false end
+        if not Util.isJpeg(path) then table.insert(notJpeg, Util.leaf(path))
+        elseif not Util.localFileExists(path) then table.insert(notLocal, Util.leaf(path))
+        else table.insert(eligible, photo) end
     end
-    return true
+    local problems = {}
+    if #notJpeg > 0 then table.insert(problems, #notJpeg .. ' not JPEG (RAW and other formats are intentionally skipped):\n' .. namesList(notJpeg)) end
+    if #notLocal > 0 then table.insert(problems, #notLocal .. ' not available locally (make them available offline in Dropbox first):\n' .. namesList(notLocal)) end
+    if #eligible == 0 then
+        LrDialogs.message('FrameSense AI — nothing to analyse', table.concat(problems, '\n\n'), 'warning')
+        return nil
+    end
+    local notes = {}
+    if #problems > 0 then table.insert(notes, table.concat(problems, '\n\n')) end
+    if #eligible > maxBatch then
+        table.insert(notes, #eligible .. ' JPEGs are eligible, but a reviewed batch holds at most ' .. maxBatch .. '. Only the first ' .. maxBatch .. ' will be analysed.')
+        for i = #eligible, maxBatch + 1, -1 do table.remove(eligible, i) end
+    end
+    if #notes > 0 then
+        local skipped = #photos - #eligible
+        local answer = LrDialogs.confirm(skipped .. ' of ' .. #photos .. ' selected photos will be skipped', table.concat(notes, '\n\n'), 'Continue with ' .. #eligible .. ' JPEG' .. (#eligible == 1 and '' or 's'), 'Cancel')
+        if answer ~= 'ok' then return nil end
+    end
+    return eligible
 end
 
 LrTasks.startAsyncTask(function()
     LrFunctionContext.callWithContext('FrameSenseAnalyse', function(context)
-        local photos = LrApplication.activeCatalog():getTargetPhotos()
-        if not validate(photos) then return end
+        local photos = validate(LrApplication.activeCatalog():getTargetPhotos())
+        if not photos then return end
         local settings = preflight(photos, context)
         if not settings then return end
         local scope = LrProgressScope { title = 'FrameSense AI is analysing selected JPEGs', functionContext = context }
@@ -349,7 +451,7 @@ LrTasks.startAsyncTask(function()
         end
         scope:done()
         if #records > 0 then
-            local reviewed = review(records, context)
+            local reviewed = review(records, context, #failures)
             if reviewed then save(reviewed) end
         end
         deletePreviews(records)

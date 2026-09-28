@@ -8,6 +8,30 @@ All notable changes are documented here.
 - Added known-issue disclosure for the OpenAI authorization failure and provider/model UI limitations.
 - Added contribution and safe bug-reporting guidance.
 
+### Fixed
+
+- Keywords that already existed in the Lightroom catalogue were silently not applied: `createKeyword` now asks for the existing keyword, and each keyword is looked up once per batch.
+- OpenAI requests now send the `Authorization` header in the `{ field, value }` form `LrHttp.post` requires (the cause of the HTTP 401). Needs confirmation inside Lightroom Classic.
+- A blank title or description in review no longer overwrites the existing catalogue title or caption.
+- A generic immediate folder name such as `Finals` no longer hides a useful parent-folder hint.
+- Descriptions are shortened by characters rather than bytes, at a word boundary, without splitting accented characters, and stay within 255 characters including the ellipsis.
+- Emoji and control characters now survive the JSON reader and writer.
+- Network failures report the error instead of stopping with a Lua comparison error.
+- The mocked tests no longer depend on the repository folder being named `framesense-ai-lightroom`.
+
+### Changed
+
+- RAW, non-JPEG and offline files in a selection are listed and skipped with consent instead of blocking the whole batch; selections above 50 offer to continue with the first 50.
+- Review dialog: sized to fit the screen so its buttons stay visible on laptops, live "n of N selected" count, live 255-character counter for the description, AI cautions shown next to the rating, per-image rating checkbox follows the master switch, and Cancel asks before discarding paid-for results.
+- Model fields are provider-specific combo boxes with suggested model IDs; any other ID can still be typed.
+- Creativity shows a readable two-decimal value; Request pace is a numeric field.
+- Preflight labels are consistently right-aligned; the learning-profile summary updates as you type the project name.
+- Rate-limited and temporarily unavailable provider responses (429, 5xx) are retried twice with back-off; requests use a 120-second timeout.
+- Temperature is omitted for OpenAI GPT-5 and o-series models, which reject custom values.
+- Gemini "thought" parts are ignored and a blocked/empty response reports its finish reason.
+- Approved vocabulary is only remembered when keyword saving is enabled.
+- Added `tests/core.lua` for JSON, text helpers, the provider request contract and learning profiles.
+
 ## 0.2.0 — 2026-09-14
 
 - Reorganised setup and preflight into photographer-friendly Basic, Project details, What to create and Advanced groups.

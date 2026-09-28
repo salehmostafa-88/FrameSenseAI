@@ -1,3 +1,4 @@
+local LrBinding = import 'LrBinding'
 local LrDialogs = import 'LrDialogs'
 local LrPrefs = import 'LrPrefs'
 local LrView = import 'LrView'
@@ -34,6 +35,13 @@ function Provider.sectionsForTopOfDialog(f, propertyTable)
     propertyTable.temperature, propertyTable.batchDelayMs = prefs.temperature, prefs.batchDelayMs
     local labelWidth, fieldWidth = 20, 38
     local function question(title, message) return f:push_button { title = '?', width = 24, action = help(title, message) } end
+    local function modelChoices(provider)
+        local choices = {}
+        for _, model in ipairs(Defaults.models) do
+            if model.provider == provider then table.insert(choices, model.value) end
+        end
+        return choices
+    end
 
     return {{
         title = 'FrameSense AI — settings', bind_to_object = propertyTable,
@@ -66,17 +74,23 @@ function Provider.sectionsForTopOfDialog(f, propertyTable)
             },
             f:group_box { title = 'Advanced settings',
                 f:column { spacing = f:control_spacing(),
-                    f:row { f:static_text { title = 'Gemini model', width_in_chars = labelWidth }, f:edit_field { value = bind 'geminiModel', width_in_chars = fieldWidth } },
-                    f:row { f:static_text { title = 'OpenAI model', width_in_chars = labelWidth }, f:edit_field { value = bind 'openaiModel', width_in_chars = fieldWidth } },
+                    f:row {
+                        f:static_text { title = 'Model', width_in_chars = labelWidth },
+                        f:view { place = 'overlapping',
+                            f:combo_box { value = bind 'geminiModel', items = modelChoices('gemini'), width_in_chars = fieldWidth, visible = LrBinding.keyEquals('provider', 'gemini') },
+                            f:combo_box { value = bind 'openaiModel', items = modelChoices('openai'), width_in_chars = fieldWidth, visible = LrBinding.keyEquals('provider', 'openai') },
+                        },
+                        question('Model', 'Shows the model for the selected AI provider. Pick a suggestion or type any model ID your provider account supports.'),
+                    },
                     f:row {
                         f:static_text { title = 'Default creativity', width_in_chars = labelWidth },
                         f:slider { value = bind 'temperature', min = 0, max = 1, integral = false, width_in_chars = 24 },
-                        f:static_text { title = bind 'temperature', width_in_chars = 5 },
+                        f:static_text { title = bind { key = 'temperature', transform = function(value) return string.format('%.2f', tonumber(value) or 0) end }, width_in_chars = 5 },
                         question('Creativity', 'Lower values favour consistent factual wording. Higher values allow more variation but may require more correction.'),
                     },
                     f:row {
                         f:static_text { title = 'Request pace (ms)', width_in_chars = labelWidth },
-                        f:edit_field { value = bind 'batchDelayMs', width_in_chars = 10 },
+                        f:edit_field { value = bind 'batchDelayMs', min = 0, max = 10000, precision = 0, width_in_chars = 10 },
                         question('Request pace', 'Pause between photos. Increase this if your provider reports rate-limit errors.'),
                     },
                 },

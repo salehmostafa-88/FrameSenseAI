@@ -30,7 +30,7 @@ The plug-in also supports non-portrait food, product, landscape, cityscape, vehi
 
 - Only a temporary, resized JPEG derivative is transmitted to Gemini or OpenAI.
 - The code requests an export with metadata disabled and location metadata removed.
-- Original file paths, GPS, existing Lightroom keywords and folder structures are not transmitted.
+- The image's filename is included as context. Original file paths, GPS, existing Lightroom keywords and folder structures are not transmitted.
 - **Folder-name hints are off by default.** If enabled, the plug-in derives only the immediate folder and parent-folder labels for each selected photo. Full paths are never sent.
 - A folder label is treated as optional photographer-provided context; the model is instructed to use it only when it matches the visible scene.
 - No local bridge, Dropbox connection, local web server or catalogue-wide index is used.
@@ -44,7 +44,7 @@ Cloud providers process the derivative under your own provider account and terms
 - A Google AI Studio Gemini API key or an OpenAI API key
 - JPEG source files available locally on disk
 
-The plug-in deliberately rejects RAW and non-JPEG files. For Dropbox Smart Sync, make the final JPEGs offline before analysis. Lightroom/Dropbox decide availability; the plug-in does not request Dropbox access or hydrate files deliberately.
+The plug-in deliberately skips RAW and non-JPEG files: if a selection contains them, it lists them and offers to continue with the JPEGs only. For Dropbox Smart Sync, make the final JPEGs offline before analysis. Lightroom/Dropbox decide availability; the plug-in does not request Dropbox access or hydrate files deliberately.
 
 ## Installation
 
@@ -108,7 +108,7 @@ Usage and prices are controlled by the provider and model. Treat provider dashbo
 - Folder labels and project context can be wrong, stale or too broad. Only give it confirmed facts.
 - The local-file check is intentionally conservative but cannot prove Dropbox will never need to download a source file.
 - The initial release supports English output and direct Gemini/OpenAI APIs.
-- OpenAI support in the current alpha has a known authorization-header defect and should not be relied on until it is fixed and tested in Lightroom. The provider/model interface also needs to become provider-specific.
+- The OpenAI authorization-header defect is fixed in code but not yet verified inside Lightroom; test it on a single copied JPEG first.
 
 See [KNOWN_ISSUES.md](KNOWN_ISSUES.md) for the current test status.
 

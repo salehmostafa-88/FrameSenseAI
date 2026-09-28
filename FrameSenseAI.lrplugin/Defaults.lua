@@ -18,9 +18,16 @@ Return JSON only, using exactly this shape:
 
 For portfolio.score choose 1–5 as a portfolio-suitability suggestion only: 5 Hero, 4 Portfolio, 3 Supporting, 2 Needs review, 1 Reject candidate. Judge visible composition, clarity of purpose, lighting/readability, styling, distinctiveness and duplication risk. Do not claim to judge full-resolution focus, retouching or technical delivery quality.]]
 
+-- Suggestions for the model combo boxes; any other model ID can still be typed.
 Defaults.models = {
-    { title = 'Google Gemini 3.5 Flash (recommended)', value = 'gemini-3.5-flash' },
-    { title = 'OpenAI GPT-4o mini', value = 'gpt-4o-mini' },
+    { provider = 'gemini', value = 'gemini-3.5-flash' },
+    { provider = 'gemini', value = 'gemini-2.5-flash' },
+    { provider = 'gemini', value = 'gemini-2.5-flash-lite' },
+    { provider = 'gemini', value = 'gemini-2.5-pro' },
+    { provider = 'openai', value = 'gpt-4o-mini' },
+    { provider = 'openai', value = 'gpt-4o' },
+    { provider = 'openai', value = 'gpt-4.1-mini' },
+    { provider = 'openai', value = 'gpt-4.1' },
 }
 
 function Defaults.initialize(prefs)

@@ -17,6 +17,7 @@ end
 
 function Util.unique(items)
     local result, seen = {}, {}
+    if type(items) == 'string' then items = { items } end
     for _, item in ipairs(items or {}) do
         item = Util.trim(item)
         local key = string.lower(item)
@@ -56,10 +57,12 @@ end
 
 function Util.folderHints(path)
     local folder = Util.parent(path)
-    local labels = {
-        Util.usefulFolderLabel(Util.leaf(folder)),
-        Util.usefulFolderLabel(Util.leaf(Util.parent(folder))),
-    }
+    -- Skip rejected labels explicitly: a nil first entry would hide the parent label from ipairs.
+    local labels = {}
+    for _, candidate in ipairs { Util.leaf(folder), Util.leaf(Util.parent(folder)) } do
+        local label = Util.usefulFolderLabel(candidate)
+        if label then table.insert(labels, label) end
+    end
     return Util.unique(labels)
 end
 
@@ -68,15 +71,26 @@ function Util.localFileExists(path)
     return ok and attributes ~= nil
 end
 
-function Util.clip(value, maxLength)
-    value = Util.trim(value)
-    if #value > maxLength then return value:sub(1, maxLength - 1) .. '…' end
-    return value
+-- Number of UTF-8 characters (not bytes); Format and alt-text limits count characters.
+function Util.length(value)
+    local _, count = tostring(value or ''):gsub('[^\128-\191]', '')
+    return count
 end
 
-function Util.csvEscape(value)
-    value = tostring(value or ''):gsub('"', '""')
-    return '"' .. value .. '"'
+-- Clips to at most maxLength UTF-8 characters, including the trailing ellipsis,
+-- preferring a word boundary and never splitting a multi-byte character.
+function Util.clip(value, maxLength)
+    value = Util.trim(value)
+    if Util.length(value) <= maxLength then return value end
+    local keep, count, cut = maxLength - 1, 0, #value
+    for position in value:gmatch('()[^\128-\191]') do
+        if count == keep then cut = position - 1 break end
+        count = count + 1
+    end
+    local clipped = value:sub(1, cut)
+    local atWord = clipped:match('^(.*%S)%s+%S*$')
+    if atWord and Util.length(atWord) >= keep * 0.8 then clipped = atWord end
+    return Util.trim(clipped):gsub('[%s,;:%.%-]+$', '') .. '…'
 end
 
 return Util

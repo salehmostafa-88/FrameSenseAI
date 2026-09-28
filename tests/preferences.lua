@@ -1,8 +1,12 @@
-package.path = 'framesense-ai-lightroom/FrameSenseAI.lrplugin/?.lua;' .. package.path
+-- Resolve the plug-in folder relative to this file so tests run from any directory.
+local testDir = (arg and arg[0] or ''):match('^(.*)[/\\]') or '.'
+local pluginDir = testDir .. '/../FrameSenseAI.lrplugin/'
+package.path = pluginDir .. '?.lua;' .. package.path
 local prefs = {}
 function import(name)
     if name == 'LrPrefs' then return { prefsForPlugin = function() return prefs end } end
     if name == 'LrView' then return { bind = function(key) return key end } end
+    if name == 'LrBinding' then return { keyEquals = function(key, value) return { key = key, equals = value } end } end
     if name == 'LrDialogs' then return { message = function() end } end
     error('Unexpected namespace: ' .. name)
 end
@@ -18,6 +22,7 @@ local provider = require 'PluginInfo'
 local p = {}
 local sections = provider.sectionsForTopOfDialog(factory, p)
 assert(sections[1][1].bind_to_object == p)
+assert(p.geminiModel == 'gemini-3.5-flash' and p.openaiModel == 'gpt-4o-mini')
 p.newGeminiApiKey = '  fake-gemini-test-only  '
 p.newOpenaiApiKey = 'fake-openai-test-only'
 provider.endDialog(p) -- Exact one-argument Plug-in Manager contract.

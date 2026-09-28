@@ -4,15 +4,15 @@ FrameSense AI is currently an alpha test release. Review this file before instal
 
 ## OpenAI provider
 
-The current OpenAI request path can return HTTP 401 because its Authorization header is not reliably passed in the format expected by Lightroom's `LrHttp.post` API. Treat OpenAI support as unavailable until the header handling is corrected and verified inside Lightroom Classic.
+Earlier alphas returned HTTP 401 because the Authorization header was passed as a plain table instead of the `{ field =, value = }` list Lightroom's `LrHttp.post` expects. This is corrected and covered by a mocked test, but OpenAI has not yet been verified inside Lightroom Classic. Test it on a single copied JPEG first.
 
 ## Provider and model controls
 
-The configuration and preflight interfaces currently expose model fields as free text and do not fully adapt them to the selected provider. A future alpha will replace these fields with provider-specific model menus and show only the relevant API-key controls.
+Model fields are now provider-specific combo boxes with suggested IDs. Both API-key fields remain visible in Plug-in Manager so you can keep a key for each provider. The suggested model list is a convenience only; check your provider's current model catalogue.
 
 ## Test scope
 
-The repository includes mocked Lua contract tests for preferences and dialogs. They do not replace tests inside Lightroom Classic, network tests with both providers, or review against a backed-up catalogue.
+The repository includes mocked Lua tests for the core modules, preferences and dialogs. The new review-dialog layout (screen-fitted size, overlapping provider-specific model boxes, live counters) has not yet been checked inside Lightroom Classic. They do not replace tests inside Lightroom Classic, network tests with both providers, or review against a backed-up catalogue.
 
 ## Reporting problems
 

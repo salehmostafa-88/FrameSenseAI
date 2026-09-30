@@ -30,19 +30,21 @@ local function selectedFolderPreview(photos)
     return table.concat(hints, '  •  ')
 end
 
+local function keySaved(provider)
+    return Util.trim(prefs[provider .. 'ApiKey']) ~= ''
+end
+
 local function preflight(photos, context)
     local f = LrView.osFactory()
-    local bind = LrView.bind
+    local bind, share = LrView.bind, LrView.share
     local property = LrBinding.makePropertyTable(context)
     property.provider = prefs.provider
     property.geminiModel = prefs.geminiModel
     property.openaiModel = prefs.openaiModel
-    property.temperature = prefs.temperature
     property.learningProfile = prefs.learningProfile
     property.projectContext = prefs.projectContext
     property.sharedTags = prefs.sharedTags
     property.folderHints = prefs.folderHints
-    property.batchDelayMs = prefs.batchDelayMs
     property.analysisPrompt = prefs.analysisPrompt or Defaults.defaultPrompt
     property.folderPreview = selectedFolderPreview(photos)
     property.showAdvanced = prefs.showAdvanced
@@ -51,104 +53,113 @@ local function preflight(photos, context)
     property.saveDescription = prefs.saveDescription
     property.generatePortfolio = prefs.generatePortfolio
 
-    local labelWidth = 22
+    -- Fixed point widths keep the dialog well inside a 1280-point laptop screen.
+    local fieldWidth = 460
     local function help(title, message)
         return f:push_button { title = '?', width = 24, action = function() LrDialogs.message(title, message, 'info') end }
     end
     local function label(title)
-        return f:static_text { title = title, width_in_chars = labelWidth, alignment = 'right' }
+        return f:static_text { title = title, alignment = 'right', width = share 'fsLabel' }
     end
-    local function modelChoices(provider)
-        local choices = {}
-        for _, model in ipairs(Defaults.models) do
-            if model.provider == provider then table.insert(choices, model.value) end
-        end
-        return choices
+    local function indented(view)
+        return f:row { f:static_text { title = '', width = share 'fsLabel' }, view }
     end
     local learningSummary = bind {
         key = 'learningProfile',
         transform = function(profile)
-            if Util.trim(profile) == '' then return 'Enter a project / property name to remember your approved keywords for next time.' end
+            if Util.trim(profile) == '' then return 'Enter a name to remember your approved keywords for next time.' end
             local count = #LearningStore.get(profile)
-            if count == 0 then return 'New project name: approved keywords will be remembered locally after you save.' end
-            return count .. ' approved vocabulary terms remembered locally for this project.'
+            if count == 0 then return 'New name: approved keywords will be remembered after you save.' end
+            return count .. ' approved keywords remembered for this name.'
         end,
     }
-    local temperatureText = bind { key = 'temperature', transform = function(value) return string.format('%.2f', tonumber(value) or 0) end }
+    local keyStatus = bind {
+        key = 'provider',
+        transform = function(provider)
+            local info = Defaults.providerInfo[provider]
+            if keySaved(provider) then return '✓ ' .. info.keyName .. ' saved.' end
+            return '⚠ No ' .. info.keyName .. ' saved. Add it in File → Plug-in Manager → FrameSense AI.'
+        end,
+    }
 
     local dialog = f:column {
         bind_to_object = property,
         spacing = f:control_spacing(),
-        f:static_text { title = 'Add project facts once. FrameSense uses them for all ' .. #photos .. ' selected photos.' },
-        f:group_box { title = 'Project details',
+        f:group_box { title = 'AI model for this batch', fill_horizontal = 1,
             f:column { spacing = f:control_spacing(),
                 f:row {
-                    label('Project / property name'),
-                    f:edit_field { value = bind 'learningProfile', width_in_chars = 66 },
-                    help('Project / property name', 'Use one stable name for this property or assignment. Approved keyword corrections are remembered locally under this name.'),
+                    label('AI provider'),
+                    f:popup_menu { value = bind 'provider', items = Defaults.providers, width = fieldWidth },
                 },
-                f:row {
-                    label('Project context'),
-                    f:edit_field { value = bind 'projectContext', width_in_chars = 66, height_in_lines = 3 },
-                    help('Project context', 'Confirmed facts such as property, location, official venue names or design information. FrameSense will not infer these facts from appearance.'),
-                },
-                f:row {
-                    f:static_text { title = '', width_in_chars = labelWidth },
-                    f:checkbox { value = bind 'folderHints', title = 'Use folder names as hints' },
-                    help('Folder-name hints', 'Uses only the immediate folder and its parent as optional naming hints. Full file paths are never sent.'),
-                },
-                f:row {
-                    label('Detected folder names'),
-                    f:static_text { title = bind 'folderPreview', enabled = bind 'folderHints', width_in_chars = 66, height_in_lines = 2 },
-                },
-                f:row {
-                    label('Shared keywords'),
-                    f:edit_field { value = bind 'sharedTags', width_in_chars = 66 },
-                    help('Shared keywords', 'Optional confirmed keywords added to every saved image in this batch, separated by commas.'),
-                },
-            },
-        },
-        f:group_box { title = 'What to create',
-            f:row {
-                f:checkbox { value = bind 'saveTitle', title = 'Title' },
-                f:checkbox { value = bind 'saveKeywords', title = 'Keywords' },
-                f:checkbox { value = bind 'saveDescription', title = 'Image description' },
-                f:checkbox { value = bind 'generatePortfolio', title = 'Portfolio suggestion' },
-                help('Portfolio suggestion', 'A visible-image selection aid, not a full-resolution technical-quality assessment. You remain in control of Lightroom ratings.'),
-            },
-        },
-        f:static_text { title = learningSummary, width_in_chars = 90 },
-        f:checkbox { value = bind 'showAdvanced', title = 'Show advanced settings' },
-        f:group_box { title = 'Advanced settings', visible = bind 'showAdvanced',
-            f:column { spacing = f:control_spacing(),
-                f:row { label('AI provider'), f:popup_menu { value = bind 'provider', items = { { title = 'Google Gemini', value = 'gemini' }, { title = 'OpenAI', value = 'openai' } } } },
                 f:row {
                     label('Model'),
                     f:view { place = 'overlapping',
-                        f:combo_box { value = bind 'geminiModel', items = modelChoices('gemini'), width_in_chars = 42, visible = LrBinding.keyEquals('provider', 'gemini') },
-                        f:combo_box { value = bind 'openaiModel', items = modelChoices('openai'), width_in_chars = 42, visible = LrBinding.keyEquals('provider', 'openai') },
+                        f:popup_menu { value = bind 'geminiModel', items = Defaults.modelItems('gemini'), width = fieldWidth, visible = LrBinding.keyEquals('provider', 'gemini') },
+                        f:popup_menu { value = bind 'openaiModel', items = Defaults.modelItems('openai'), width = fieldWidth, visible = LrBinding.keyEquals('provider', 'openai') },
                     },
-                    help('Model', 'Pick a suggested model or type any model ID your provider account supports.'),
+                    f:push_button { title = '?', width = 24, action = function()
+                        LrDialogs.message('Model and cost', Defaults.pricingSummary(property.provider) .. '\n\nEstimates are rough: about 2,000 input and 1,000 output tokens per photo. Your provider dashboard is the authoritative source for cost.', 'info')
+                    end },
                 },
-                f:row { label('Creativity'), f:static_text { title = 'Consistent' }, f:slider { value = bind 'temperature', min = 0, max = 1, width_in_chars = 20 }, f:static_text { title = 'Varied' }, f:static_text { title = temperatureText, width_in_chars = 5 }, help('Creativity', 'Lower values give more consistent factual wording. Higher values create more variation and may need more correction. GPT-5 and o-series models ignore this setting.') },
-                f:row { label('Request pace (ms)'), f:edit_field { value = bind 'batchDelayMs', min = 0, max = 10000, precision = 0, width_in_chars = 10 }, help('Request pace', 'Pause between photos. Increase this if your provider reports rate-limit errors; busy or rate-limited requests are also retried automatically.') },
-                f:row { label('Analysis prompt'), f:edit_field { value = bind 'analysisPrompt', width_in_chars = 66, height_in_lines = 11 }, help('Analysis prompt', 'The detailed instruction sent to the selected AI provider. Edit only when you want to change the output rules.') },
-                f:row { label(''), f:push_button { title = 'Restore standard prompt', action = function() property.analysisPrompt = Defaults.defaultPrompt end } },
+                indented(f:static_text { title = keyStatus, width = fieldWidth }),
             },
         },
-        f:static_text { title = 'Privacy: only a temporary, metadata-free 1600px JPEG derivative and its filename are sent. Folder paths, GPS and existing keywords are excluded.' },
+        f:group_box { title = 'Project details — used for all ' .. #photos .. ' photos', fill_horizontal = 1,
+            f:column { spacing = f:control_spacing(),
+                f:row {
+                    label('Project / property name'),
+                    f:edit_field { value = bind 'learningProfile', width = fieldWidth },
+                    help('Project / property name', 'Use one stable name for this property or assignment. Approved keyword corrections are remembered locally under this name.'),
+                },
+                indented(f:static_text { title = learningSummary, width = fieldWidth }),
+                f:row {
+                    label('Confirmed facts'),
+                    f:edit_field { value = bind 'projectContext', width = fieldWidth, height_in_lines = 3 },
+                    help('Confirmed facts', 'Facts you want used, such as the property name, location, official venue names or design information. FrameSense will not infer these facts from appearance.'),
+                },
+                f:row {
+                    label('Keywords for every photo'),
+                    f:edit_field { value = bind 'sharedTags', width = fieldWidth },
+                    help('Keywords for every photo', 'Optional confirmed keywords added to every saved photo in this batch, separated by commas.'),
+                },
+                f:row {
+                    label('Folder names'),
+                    f:checkbox { value = bind 'folderHints', title = 'Use as hints:' },
+                    f:static_text { title = bind 'folderPreview', enabled = bind 'folderHints', width = fieldWidth - 100, height_in_lines = 2 },
+                    help('Folder-name hints', 'Sends only the folder and parent-folder names shown here, never the full path. The AI uses them only when they match the photo.'),
+                },
+            },
+        },
+        f:group_box { title = 'What to create', fill_horizontal = 1,
+            f:row {
+                f:checkbox { value = bind 'saveTitle', title = 'Title' },
+                f:checkbox { value = bind 'saveKeywords', title = 'Keywords' },
+                f:checkbox { value = bind 'saveDescription', title = 'Description / alt text' },
+                f:checkbox { value = bind 'generatePortfolio', title = 'Portfolio rating' },
+                help('Portfolio rating', 'A suggestion based on the visible image, not a full-resolution technical check. Lightroom stars and colour labels change only if you turn that on in the review.'),
+            },
+        },
+        f:checkbox { value = bind 'showAdvanced', title = 'Show analysis prompt' },
+        f:group_box { title = 'Analysis prompt', visible = bind 'showAdvanced', fill_horizontal = 1,
+            f:column { spacing = f:control_spacing(),
+                f:edit_field { value = bind 'analysisPrompt', width = fieldWidth + 180, height_in_lines = 10 },
+                f:row {
+                    f:push_button { title = 'Restore standard prompt', action = function() property.analysisPrompt = Defaults.defaultPrompt end },
+                    f:static_text { title = 'Edit only to change the output rules. Your edits are remembered.' },
+                },
+            },
+        },
+        f:static_text { title = 'Privacy: only a temporary 1600px JPEG copy without metadata, and its filename, are sent. Folder paths, GPS and existing keywords are not.', width = fieldWidth + 180, height_in_lines = 2 },
     }
-    if LrDialogs.presentModalDialog { title = 'FrameSense AI — analyse ' .. #photos .. ' photos', contents = dialog, actionVerb = 'Analyse ' .. #photos .. ' photos' } ~= 'ok' then return nil end
+    if LrDialogs.presentModalDialog { title = 'FrameSense AI — analyse ' .. #photos .. ' photo' .. (#photos == 1 and '' or 's'), contents = dialog, actionVerb = 'Analyse' } ~= 'ok' then return nil end
 
     prefs.provider = property.provider
-    prefs.geminiModel = Util.trim(property.geminiModel)
-    prefs.openaiModel = Util.trim(property.openaiModel)
-    prefs.temperature = math.max(0, math.min(1, tonumber(property.temperature) or 0.2))
+    prefs.geminiModel = property.geminiModel
+    prefs.openaiModel = property.openaiModel
     prefs.learningProfile = Util.trim(property.learningProfile)
     prefs.projectContext = Util.trim(property.projectContext)
     prefs.sharedTags = property.sharedTags or ''
     prefs.folderHints = property.folderHints and true or false
-    prefs.batchDelayMs = math.max(0, math.min(10000, tonumber(property.batchDelayMs) or 700))
     prefs.analysisPrompt = Util.trim(property.analysisPrompt)
     if prefs.analysisPrompt == '' then prefs.analysisPrompt = Defaults.defaultPrompt end
     prefs.showAdvanced = property.showAdvanced and true or false
@@ -156,6 +167,15 @@ local function preflight(photos, context)
     prefs.saveKeywords = property.saveKeywords and true or false
     prefs.saveDescription = property.saveDescription and true or false
     prefs.generatePortfolio = property.generatePortfolio and true or false
+    -- Choices above are saved first, so nothing typed is lost when the key is missing.
+    if not keySaved(prefs.provider) then
+        LrDialogs.message('FrameSense AI — no API key', 'Add your ' .. Defaults.providerInfo[prefs.provider].keyName .. ' in File → Plug-in Manager → FrameSense AI, then run the analysis again. Your project details have been kept.', 'warning')
+        return nil
+    end
+    if not (prefs.saveTitle or prefs.saveKeywords or prefs.saveDescription or prefs.generatePortfolio) then
+        LrDialogs.message('FrameSense AI — nothing to create', 'Tick at least one item under What to create.', 'warning')
+        return nil
+    end
     return {
         provider = prefs.provider, geminiModel = prefs.geminiModel, openaiModel = prefs.openaiModel,
         geminiApiKey = prefs.geminiApiKey, openaiApiKey = prefs.openaiApiKey,
@@ -204,11 +224,11 @@ end
 
 -- Keeps the review dialog, including its buttons, on a small laptop screen.
 local function reviewSize()
-    local width, height = 1380, 700
+    local width, height = 1060, 700
     local ok, displays = pcall(LrSystemInfo.displayInfo)
     local display = ok and type(displays) == 'table' and displays[1]
     if display and display.width and display.height then
-        width = math.max(900, math.min(width, display.width - 100))
+        width = math.max(760, math.min(width, display.width - 100))
         height = math.max(360, math.min(height, display.height - 280))
     end
     return width, height
@@ -222,7 +242,7 @@ local function review(records, context, failureCount)
     local function updateSelectedCount()
         local selected = 0
         for i = 1, #records do if property['enabled' .. i] then selected = selected + 1 end end
-        property.selectedSummary = selected .. ' of ' .. #records .. ' photos selected for saving. Saving metadata and applying Lightroom ratings are separate choices.'
+        property.selectedSummary = selected .. ' of ' .. #records .. ' photos will be saved.'
     end
     local descriptionCount = function(i)
         return bind { key = 'description' .. i, transform = function(value)
@@ -253,8 +273,9 @@ local function review(records, context, failureCount)
     end
     updateSelectedCount()
     local width, height = reviewSize()
-    local intro = 'Review the suggestions below. Approved edits improve this project’s local vocabulary; they do not train the cloud model.'
+    local intro = 'Check and correct each suggestion, untick any photo you do not want saved, then choose Save.'
     if (failureCount or 0) > 0 then intro = intro .. '\n' .. failureCount .. ' photo(s) could not be analysed; details are shown after this review.' end
+    local fieldWidth, sideWidth = 440, 220
 
     -- Views are rebuilt for each presentation; all edits live in the property table.
     local function buildContents()
@@ -263,46 +284,62 @@ local function review(records, context, failureCount)
             local reason = table.concat(record.portfolio.strengths or {}, '; ')
             if reason == '' then reason = record.portfolio.recommendedUse or 'Review the visible composition and usefulness.' end
             if #(record.portfolio.cautions or {}) > 0 then reason = reason .. '\nCheck: ' .. table.concat(record.portfolio.cautions, '; ') end
+            -- Only the fields chosen under What to create are shown.
+            local fields = { spacing = f:label_spacing() }
+            if prefs.saveTitle then
+                table.insert(fields, f:static_text { title = 'Title' })
+                table.insert(fields, f:edit_field { value = bind('title' .. i), width = fieldWidth })
+            end
+            if prefs.saveKeywords then
+                table.insert(fields, f:static_text { title = 'Keywords (comma-separated)' })
+                table.insert(fields, f:edit_field { value = bind('keywords' .. i), width = fieldWidth, height_in_lines = 3 })
+            end
+            if prefs.saveDescription then
+                table.insert(fields, f:row {
+                    f:static_text { title = 'Description / alt text', width = fieldWidth - 160 },
+                    f:static_text { title = descriptionCount(i), alignment = 'right', width = 160 },
+                })
+                table.insert(fields, f:edit_field { value = bind('description' .. i), width = fieldWidth, height_in_lines = 4 })
+            end
+            local side = { spacing = f:label_spacing(), f:static_text { title = confidenceText(record.confidence), width = sideWidth } }
+            if prefs.generatePortfolio then
+                table.insert(side, f:static_text { title = 'Portfolio rating' })
+                table.insert(side, f:popup_menu { value = bind('score' .. i), items = ratingItems, width = sideWidth })
+                table.insert(side, f:checkbox { value = bind('ratingEnabled' .. i), enabled = bind 'applyRatings', title = 'Set stars & colour label' })
+                table.insert(side, f:static_text { title = reason, width = sideWidth, height_in_lines = 6 })
+            end
             table.insert(rows, f:group_box {
-                title = record.filename,
+                title = record.filename, fill_horizontal = 1,
                 f:row {
                     f:column {
-                        f:checkbox { value = bind('enabled' .. i), title = 'Save metadata' },
-                        f:catalog_photo { photo = record.photo, width = 280, height = 187, frame_width = 1 },
+                        f:checkbox { value = bind('enabled' .. i), title = 'Save this photo' },
+                        f:catalog_photo { photo = record.photo, width = 260, height = 173, frame_width = 1 },
                     },
-                    f:column {
-                        f:static_text { title = 'Title' }, f:edit_field { value = bind('title' .. i), width_in_chars = 62 },
-                        f:static_text { title = 'Frame-specific keywords (comma-separated)' }, f:edit_field { value = bind('keywords' .. i), width_in_chars = 76, height_in_lines = 2 },
-                        f:row { f:static_text { title = 'Format image description / alt text' }, f:static_text { title = descriptionCount(i), width_in_chars = 28 } },
-                        f:edit_field { value = bind('description' .. i), width_in_chars = 76, height_in_lines = 3 },
-                    },
-                    f:column {
-                        f:static_text { title = 'Portfolio rating' },
-                        f:popup_menu { value = bind('score' .. i), items = ratingItems, enabled = prefs.generatePortfolio, width_in_chars = 29 },
-                        f:checkbox { value = bind('ratingEnabled' .. i), enabled = prefs.generatePortfolio and bind 'applyRatings' or false, title = 'Update LR rating & label' },
-                        f:static_text { title = confidenceText(record.confidence), width_in_chars = 30 },
-                        f:static_text { title = reason, width_in_chars = 30, height_in_lines = 5 },
-                    },
+                    f:column(fields),
+                    f:column(side),
                 },
             })
+        end
+        local toolbar = {
+            f:push_button { title = 'Select all', action = function() for i = 1, #records do property['enabled' .. i] = true end end },
+            f:push_button { title = 'Select none', action = function() for i = 1, #records do property['enabled' .. i] = false end end },
+            f:static_text { title = bind 'selectedSummary', width = 200 },
+        }
+        if prefs.generatePortfolio then
+            table.insert(toolbar, f:spacer { width = 20 })
+            table.insert(toolbar, f:checkbox { value = bind 'applyRatings', title = 'Also set Lightroom stars & colour labels' })
+            table.insert(toolbar, f:push_button { title = '?', width = 24, action = function() LrDialogs.message('Lightroom stars & colour labels', 'When ticked, each photo whose "Set stars & colour label" box is also ticked gets:\n\n5 stars + Blue — Hero\n4 stars + Green — Portfolio\n3 stars + Yellow — Supporting\n2 stars + Red — Needs review\n1 star + no label — Reject candidate\n\nLeave it unticked to keep existing ratings and labels. The portfolio rating is still saved in the FrameSense metadata panel. It is a suggestion from the visible image, not a full-resolution technical check.', 'info') end })
         end
         return f:column {
             bind_to_object = property,
             spacing = f:control_spacing(),
-            f:static_text { title = intro, width_in_chars = 120, height_in_lines = (failureCount or 0) > 0 and 2 or 1 },
-            f:row {
-                f:push_button { title = 'Select all metadata', action = function() for i = 1, #records do property['enabled' .. i] = true end end },
-                f:push_button { title = 'Select none', action = function() for i = 1, #records do property['enabled' .. i] = false end end },
-                f:checkbox { value = bind 'applyRatings', enabled = prefs.generatePortfolio, title = 'Apply Lightroom ratings & labels' },
-                f:push_button { title = '?', width = 24, action = function() LrDialogs.message('Lightroom ratings & labels', 'Optional portfolio-suitability suggestions:\n\n5 + Blue — Hero\n4 + Green — Portfolio\n3 + Yellow — Supporting\n2 + Red — Needs review\n1 + no label — Reject candidate\n\nUncheck the master option or an individual image to preserve its existing Lightroom rating and label. This is not a full-resolution technical-quality assessment.', 'info') end },
-                f:static_text { title = 'Uncheck to leave existing Lightroom ratings and labels unchanged.' },
-            },
+            f:static_text { title = intro, width = width, height_in_lines = (failureCount or 0) > 0 and 2 or 1 },
+            f:row(toolbar),
             f:scrolled_view { width = width, height = height, horizontal_scroller = true, vertical_scroller = true, f:column(rows) },
-            f:static_text { title = bind 'selectedSummary', width_in_chars = 120 },
         }
     end
     -- The analysis has already been paid for, so Cancel/Esc asks before discarding it.
-    while LrDialogs.presentModalDialog { title = 'FrameSense AI — review ' .. #records .. ' photos', contents = buildContents(), actionVerb = 'Save selected photos' } ~= 'ok' do
+    while LrDialogs.presentModalDialog { title = 'FrameSense AI — review ' .. #records .. ' photos', contents = buildContents(), actionVerb = 'Save', cancelVerb = 'Discard…' } ~= 'ok' do
         if LrDialogs.confirm('Discard all ' .. #records .. ' AI suggestions?', 'Nothing will be saved to the catalogue. Running the analysis again will send the photos to the provider again.', 'Discard', 'Back to review') == 'ok' then return nil end
     end
     prefs.applyRatings = prefs.generatePortfolio and property.applyRatings and true or false

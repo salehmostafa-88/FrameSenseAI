@@ -19,6 +19,16 @@ All notable changes are documented here.
 - Network failures report the error instead of stopping with a Lua comparison error.
 - The mocked tests no longer depend on the repository folder being named `framesense-ai-lightroom`.
 
+### Interface redesign
+
+- Model fields are fixed menus, never free text, labelled by cost tier with an approximate cost per 100 photos: Gemini 3.1 Flash-Lite / 3.5 Flash / 3.1 Pro, and OpenAI GPT-5.4 nano / mini / GPT-5.4 / GPT-5.5. The `?` beside each menu lists prices per 1M tokens.
+- Saved free-text models from earlier alphas migrate to the recommended model when not in the menu.
+- The provider menu now drives the panel: only the selected provider's model menu and API-key field are shown. A key typed before switching provider is kept with the provider it was typed for.
+- Plug-in Manager: key status moved under the field so it is never cut off; Save, **Check connection** (a free call that validates the key and model access) and **Get a key…** buttons; a Ready / Not ready line.
+- All dialogs use fixed point widths instead of `width_in_chars`, which rendered roughly twice as wide as intended and pushed controls out of Plug-in Manager's frame.
+- Analyse dialog: the model choice for the batch is at the top with a key warning; plainer labels (Confirmed facts, Keywords for every photo); creativity and pause settings live only in Plug-in Manager; the Advanced section now holds only the prompt. A missing key or an empty What to create stops before anything is uploaded, keeping your edits.
+- Review cards show only the fields chosen under What to create, with a shorter toolbar (Select all, Select none, live count, Also set Lightroom stars & colour labels) and Save / Discard… buttons.
+
 ### Changed
 
 - RAW, non-JPEG and offline files in a selection are listed and skipped with consent instead of blocking the whole batch; selections above 50 offer to continue with the first 50.

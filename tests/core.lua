@@ -12,6 +12,10 @@ local namespaces = {
         table.insert(posts, { url = url, body = body, headers = headers, method = method, timeout = timeout })
         local nextResponse = table.remove(responses, 1)
         return nextResponse[1], nextResponse[2]
+    end, get = function(url, headers)
+        table.insert(posts, { url = url, headers = headers })
+        local nextResponse = table.remove(responses, 1)
+        return nextResponse[1], nextResponse[2]
     end },
 }
 function import(name) return assert(namespaces[name], 'Unsupported namespace ' .. name) end
@@ -123,6 +127,20 @@ expectError(function() ProviderClient.analyse(settings, 'BASE64', 'context') end
 settings.geminiApiKey = '  '
 expectError(function() ProviderClient.analyse(settings, 'BASE64', 'context') end, 'Gemini API key is missing')
 
+-- ProviderClient.checkConnection -----------------------------------------------------------
+local ok, message = ProviderClient.checkConnection('gemini', ' ', 'gemini-3.5-flash')
+assert(not ok and message:find('No Gemini API key', 1, true))
+responses = { { '{}', { status = 200 } } }
+ok, message = ProviderClient.checkConnection('gemini', 'g-key', 'gemini-3.5-flash')
+assert(ok and message:find('gemini-3.5-flash is available', 1, true) and posts[#posts].url:find('/models/gemini-3.5-flash?key=g-key', 1, true))
+responses = { { '{}', { status = 401 } } }
+ok, message = ProviderClient.checkConnection('openai', 'sk', 'gpt-5.4-mini')
+assert(not ok and message:find('rejected the key', 1, true) and headerValue(posts[#posts].headers, 'Authorization') == 'Bearer sk')
+responses = { { '{}', { status = 429 } } }
+assert(select(2, ProviderClient.checkConnection('openai', 'sk', 'gpt-5.4-mini')):find('credit', 1, true))
+responses = { { nil, { error = { name = 'NetworkError' } } } }
+assert(select(2, ProviderClient.checkConnection('openai', 'sk', 'gpt-5.4-mini')):find('Could not reach OpenAI', 1, true))
+
 -- LearningStore ------------------------------------------------------------------------------
 LearningStore.remember('Mövenpick Taba', { { enabled = true, keywords = { 'pool area', 'Pool Area', 'sun loungers' } }, { enabled = false, keywords = { 'rejected term' } } })
 local vocabulary = LearningStore.get(' Mövenpick Taba ')
@@ -134,4 +152,4 @@ LearningStore.remember('Mövenpick Taba', { { enabled = true, keywords = bulk } 
 vocabulary = LearningStore.get('Mövenpick Taba')
 assert(#vocabulary == 80 and vocabulary[80] == 'term 100', 'vocabulary should keep the 80 most recent terms')
 
-print('PASS: JSON escapes and emoji, UTF-8 clipping, folder hints, response normalising, LrHttp header format, retry/backoff, GPT-5 temperature, Gemini thought parts, network errors, learning profiles')
+print('PASS: connection check messages, JSON escapes and emoji, UTF-8 clipping, folder hints, response normalising, LrHttp header format, retry/backoff, GPT-5 temperature, Gemini thought parts, network errors, learning profiles')

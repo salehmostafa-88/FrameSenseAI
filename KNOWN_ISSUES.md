@@ -8,11 +8,13 @@ Earlier alphas returned HTTP 401 because the Authorization header was passed as 
 
 ## Provider and model controls
 
-Model fields are now provider-specific combo boxes with suggested IDs. Both API-key fields remain visible in Plug-in Manager so you can keep a key for each provider. The suggested model list is a convenience only; check your provider's current model catalogue.
+Models are chosen from a fixed, provider-specific menu. The model IDs were checked against provider documentation in September 2026. `gemini-3.1-flash-lite` is the least certain ID; use **Check connection** in Plug-in Manager after choosing a model, and report any model it says is unavailable. When providers retire a model, the menu needs a plug-in update.
+
+Plug-in Manager shows one API-key field for the selected provider. Keys for both providers are kept; switching provider shows the other provider's key status.
 
 ## Test scope
 
-The repository includes mocked Lua tests for the core modules, preferences and dialogs. The new review-dialog layout (screen-fitted size, overlapping provider-specific model boxes, live counters) has not yet been checked inside Lightroom Classic. They do not replace tests inside Lightroom Classic, network tests with both providers, or review against a backed-up catalogue.
+The repository includes mocked Lua tests for the core modules, preferences and dialogs. The redesigned Plug-in Manager panel, analyse dialog and review cards (fixed point widths, provider-specific model menus in an overlapping view, live counters) have not yet been checked inside Lightroom Classic. They do not replace tests inside Lightroom Classic, network tests with both providers, or review against a backed-up catalogue.
 
 ## Reporting problems
 

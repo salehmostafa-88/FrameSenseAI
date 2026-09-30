@@ -78,6 +78,29 @@ function Client.normalise(result)
     }
 end
 
+-- Free check (no image, no tokens): asks the provider for the selected model's details,
+-- which proves the key is accepted and that this key can use that model.
+-- Returns ok, message.
+function Client.checkConnection(provider, key, model)
+    key = Util.trim(key)
+    local info = provider == 'openai' and 'OpenAI' or 'Gemini'
+    if key == '' then return false, 'No ' .. info .. ' API key saved yet.' end
+    local url, headers
+    if provider == 'openai' then
+        url, headers = 'https://api.openai.com/v1/models/' .. model, { { field = 'Authorization', value = 'Bearer ' .. key } }
+    else
+        url, headers = 'https://generativelanguage.googleapis.com/v1beta/models/' .. model .. '?key=' .. key, {}
+    end
+    local _, responseHeaders = LrHttp.get(url, headers, 30)
+    local status = responseHeaders and responseHeaders.status
+    if status and status >= 200 and status < 300 then return true, '✓ Connected. ' .. model .. ' is available with this key.' end
+    if status == 400 or status == 401 or status == 403 then return false, '✗ ' .. info .. ' rejected the key (HTTP ' .. status .. '). Paste it again and save.' end
+    if status == 404 then return false, '✗ The key works, but ' .. model .. ' is not available to it. Choose another model.' end
+    if status == 429 then return false, '✗ The key works but is rate-limited or out of credit (HTTP 429). Check billing.' end
+    if status then return false, '✗ ' .. info .. ' returned HTTP ' .. status .. '. Try again shortly.' end
+    return false, '✗ Could not reach ' .. info .. '. Check the internet connection.'
+end
+
 -- GPT-5 and o-series reasoning models reject any temperature other than the default.
 function Client.acceptsTemperature(model)
     model = string.lower(model or '')

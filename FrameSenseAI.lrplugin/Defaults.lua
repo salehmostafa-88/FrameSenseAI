@@ -18,22 +18,73 @@ Return JSON only, using exactly this shape:
 
 For portfolio.score choose 1–5 as a portfolio-suitability suggestion only: 5 Hero, 4 Portfolio, 3 Supporting, 2 Needs review, 1 Reject candidate. Judge visible composition, clarity of purpose, lighting/readability, styling, distinctiveness and duplication risk. Do not claim to judge full-resolution focus, retouching or technical delivery quality.]]
 
--- Suggestions for the model combo boxes; any other model ID can still be typed.
-Defaults.models = {
-    { provider = 'gemini', value = 'gemini-3.5-flash' },
-    { provider = 'gemini', value = 'gemini-2.5-flash' },
-    { provider = 'gemini', value = 'gemini-2.5-flash-lite' },
-    { provider = 'gemini', value = 'gemini-2.5-pro' },
-    { provider = 'openai', value = 'gpt-4o-mini' },
-    { provider = 'openai', value = 'gpt-4o' },
-    { provider = 'openai', value = 'gpt-4.1-mini' },
-    { provider = 'openai', value = 'gpt-4.1' },
+Defaults.providers = {
+    { title = 'Google Gemini', value = 'gemini' },
+    { title = 'OpenAI', value = 'openai' },
 }
 
+Defaults.providerInfo = {
+    gemini = { name = 'Google Gemini', keyName = 'Gemini API key', keyUrl = 'https://aistudio.google.com/apikey', pricingUrl = 'https://ai.google.dev/gemini-api/docs/pricing' },
+    openai = { name = 'OpenAI', keyName = 'OpenAI API key', keyUrl = 'https://platform.openai.com/api-keys', pricingUrl = 'https://platform.openai.com/docs/pricing' },
+}
+
+-- The only models offered in the interface, cheapest first. Prices are standard API
+-- prices in US$ per 1M input / output tokens, checked September 2026; the provider's
+-- pricing page is authoritative. `per100` is a rough estimate for 100 photos assuming
+-- about 2,000 input and 1,000 output tokens per photo; thinking models can use more.
+Defaults.models = {
+    gemini = {
+        { value = 'gemini-3.1-flash-lite', name = 'Gemini 3.1 Flash-Lite', tier = 'Economy', input = 0.25, output = 1.50 },
+        { value = 'gemini-3.5-flash', name = 'Gemini 3.5 Flash', tier = 'Recommended', input = 1.50, output = 9.00 },
+        { value = 'gemini-3.1-pro-preview', name = 'Gemini 3.1 Pro (preview)', tier = 'Premium', input = 2.00, output = 12.00 },
+    },
+    openai = {
+        { value = 'gpt-5.4-nano', name = 'GPT-5.4 nano', tier = 'Economy', input = 0.20, output = 1.25 },
+        { value = 'gpt-5.4-mini', name = 'GPT-5.4 mini', tier = 'Recommended', input = 0.75, output = 4.50 },
+        { value = 'gpt-5.4', name = 'GPT-5.4', tier = 'Standard', input = 2.50, output = 15.00 },
+        { value = 'gpt-5.5', name = 'GPT-5.5', tier = 'Premium', input = 5.00, output = 30.00 },
+    },
+}
+Defaults.recommendedModel = { gemini = 'gemini-3.5-flash', openai = 'gpt-5.4-mini' }
+
+function Defaults.modelInfo(provider, value)
+    for _, model in ipairs(Defaults.models[provider] or {}) do
+        if model.value == value then return model end
+    end
+end
+
+function Defaults.estimatePer100(model)
+    return 100 * (2000 * model.input + 1000 * model.output) / 1000000
+end
+
+-- Popup items: tier first so people choose by what they are willing to pay.
+function Defaults.modelItems(provider)
+    local items = {}
+    for _, model in ipairs(Defaults.models[provider] or {}) do
+        table.insert(items, {
+            title = string.format('%s — %s  (about $%.2f per 100 photos)', model.tier, model.name, Defaults.estimatePer100(model)),
+            value = model.value,
+        })
+    end
+    return items
+end
+
+function Defaults.pricingSummary(provider)
+    local lines = {}
+    for _, model in ipairs(Defaults.models[provider] or {}) do
+        table.insert(lines, string.format('%s — %s: $%.2f input / $%.2f output per 1M tokens, about $%.2f per 100 photos',
+            model.tier, model.name, model.input, model.output, Defaults.estimatePer100(model)))
+    end
+    return table.concat(lines, '\n')
+end
+
 function Defaults.initialize(prefs)
-    if not prefs.provider then prefs.provider = 'gemini' end
-    if not prefs.geminiModel then prefs.geminiModel = 'gemini-3.5-flash' end
-    if not prefs.openaiModel then prefs.openaiModel = 'gpt-4o-mini' end
+    if prefs.provider ~= 'gemini' and prefs.provider ~= 'openai' then prefs.provider = 'gemini' end
+    -- Earlier alphas accepted free-text model IDs; anything outside the catalogue
+    -- falls back to the recommended model so the menus always show a valid choice.
+    for provider, model in pairs(Defaults.recommendedModel) do
+        if not Defaults.modelInfo(provider, prefs[provider .. 'Model']) then prefs[provider .. 'Model'] = model end
+    end
     if prefs.temperature == nil then prefs.temperature = 0.20 end
     if prefs.batchDelayMs == nil then prefs.batchDelayMs = 700 end
     if prefs.folderHints == nil then prefs.folderHints = false end

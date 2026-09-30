@@ -4,7 +4,8 @@ local testDir = (arg and arg[0] or ''):match('^(.*)[/\\]') or '.'
 local pluginDir = testDir .. '/../FrameSenseAI.lrplugin/'
 package.path = pluginDir .. '?.lua;' .. package.path
 local active, tables, dialogs, calls = nil, 0, 0, 0
-local prefs = {}
+local prefs = { geminiApiKey = 'fake-test-key' }
+local messages = {}
 local photos = {}
 local writes, learned, applied = {}, false, {}
 local confirms, reviewCancels = {}, 0
@@ -22,7 +23,9 @@ local existingKeywords = { ['restaurant interior'] = true }
 local created = 0
 local factory = setmetatable({}, { __index = function(_, kind)
     return function(_, spec, extra)
-        if kind == 'control_spacing' then return 6 end
+        if kind == 'control_spacing' or kind == 'label_spacing' then return 6 end
+        assert(type(spec) == 'table' and spec.width_in_chars == nil, kind .. ' uses width_in_chars; dialogs need fixed point widths')
+        assert(kind ~= 'combo_box' and not (kind == 'edit_field' and (spec.value == 'geminiModel' or spec.value == 'openaiModel')), 'model must not be free text')
         assert(type(spec) == 'table' and extra == nil, 'View requires one table')
         spec.kind = kind
         return spec
@@ -54,8 +57,14 @@ local namespaces = {
  LrDialogs = { presentModalDialog = function(spec)
     dialogs = dialogs + 1
     local p = assert(spec.contents.bind_to_object, 'missing binding')
+    if missingKeyRun then
+        p.provider = 'openai' -- no OpenAI key saved
+        p.projectContext = 'Kept project facts'
+        return 'ok'
+    end
     if dialogs == 1 then
         assert(p.provider == 'gemini')
+        assert(findKind(spec.contents, 'popup_menu') >= 3, 'provider and model menus missing from preflight')
         assert(p.analysisPrompt and p.analysisPrompt:find('frame%-specific'))
         assert(p.folderPreview:find('Restaurant', 1, true))
         p.analysisPrompt = p.analysisPrompt .. '\nTest remembered instruction.'
@@ -70,7 +79,7 @@ local namespaces = {
     p.applyRatings = true
     p.score1 = '5'; p.score2 = '4'; p.score3 = '3'
     return 'ok'
- end, message = function() error('Unexpected error dialog') end,
+ end, message = function(title) if not title:find('no API key', 1, true) then error('Unexpected error dialog: ' .. title) end; table.insert(messages, title) end,
  confirm = function(message) table.insert(confirms, message); return message:find('Discard', 1, true) and 'cancel' or 'ok' end },
  LrExportSession = function(spec)
     assert(spec.photosToExport[1].getRawMetadata, 'expected photo object')
@@ -90,7 +99,7 @@ local namespaces = {
  LrStringUtils = { encodeBase64 = function() return 'mock' end },
  LrSystemInfo = { displayInfo = function() return { { width = 1440, height = 900 } } end },
  LrTasks = { startAsyncTask = function(fn) fn() end, pcall = function(fn) calls = calls + 1; return pcall(fn) end, sleep = function() end },
- LrView = { osFactory = function() return factory end, bind = function(k) return k end },
+ LrView = { osFactory = function() return factory end, bind = function(k) return k end, share = function(k) return { share = k } end },
 }
 function import(name) return assert(namespaces[name], 'Unsupported namespace ' .. name) end
 package.loaded.LearningStore = { get = function() return {} end, remember = function() learned = true end }
@@ -123,4 +132,10 @@ for _, write in ipairs(writes) do
     if write[2] == 'colorNameForLabel' and write[3] == 'blue' then sawBlue = true end
 end
 assert(sawFive and sawBlue, 'rating or active colour-label mapping was not written')
-print('PASS: contexts, RAW skipped with consent, prompt persistence, catalog previews, cancel confirmation, three rows, existing keywords reused, blank title preserved, rating opt-in, native colour assignment')
+-- Second run: switching to a provider without a saved key stops before any upload, keeping edits.
+missingKeyRun = true
+local callsBefore = calls
+dofile(pluginDir .. 'AnalyzeSelected.lua')
+assert(#messages == 1 and calls == callsBefore, 'missing key should stop before analysis')
+assert(prefs.provider == 'openai' and prefs.projectContext == 'Kept project facts', 'preflight edits should be kept')
+print('PASS: missing-key guard keeps edits and sends nothing; contexts, RAW skipped with consent, prompt persistence, catalog previews, cancel confirmation, three rows, existing keywords reused, blank title preserved, rating opt-in, native colour assignment')

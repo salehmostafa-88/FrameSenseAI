@@ -51,8 +51,24 @@ The plug-in deliberately skips RAW and non-JPEG files: if a selection contains t
 1. Download the release ZIP and unzip it somewhere stable on your Mac or PC.
 2. In Lightroom Classic, open **File → Plug-in Manager → Add**.
 3. Select the included `FrameSenseAI.lrplugin` folder.
-4. Choose **FrameSense AI** in Plug-in Manager and enter the API key for the provider you intend to use.
+4. Choose **FrameSense AI** in Plug-in Manager, pick the **AI provider** and **Model**, paste that provider's API key (or use **Get a key…**), then choose **Save** and **Check connection**. The check is free: it confirms the key and that it can use the chosen model without sending a photo.
 5. Start with one to three JPEGs.
+
+## Choosing a model
+
+Models are chosen from a fixed menu, labelled by what they cost, so no model ID has to be typed:
+
+| Provider | Tier | Model | US$ per 1M tokens (in / out) | Rough cost per 100 photos |
+|---|---|---|---|---:|
+| Gemini | Economy | Gemini 3.1 Flash-Lite | 0.25 / 1.50 | ~$0.20 |
+| Gemini | Recommended | Gemini 3.5 Flash | 1.50 / 9.00 | ~$1.20 |
+| Gemini | Premium | Gemini 3.1 Pro (preview) | 2.00 / 12.00 | ~$1.60 |
+| OpenAI | Economy | GPT-5.4 nano | 0.20 / 1.25 | ~$0.17 |
+| OpenAI | Recommended | GPT-5.4 mini | 0.75 / 4.50 | ~$0.60 |
+| OpenAI | Standard | GPT-5.4 | 2.50 / 15.00 | ~$2.00 |
+| OpenAI | Premium | GPT-5.5 | 5.00 / 30.00 | ~$4.00 |
+
+Prices were checked in September 2026. The per-100 estimate assumes roughly 2,000 input and 1,000 output tokens per photo; models that "think" can use more. Your provider's dashboard is the authoritative source.
 
 Do not put your API key in project context, filenames or prompts. Set a provider budget limit independently in Google AI Studio or OpenAI.
 
@@ -60,16 +76,18 @@ Do not put your API key in project context, filenames or prompts. Set a provider
 
 1. Select up to fifty locally available JPEGs in Library.
 2. Choose **Library → Plug-in Extras → Analyze selected JPEGs with FrameSense AI**.
-3. In the simplified Project details group, set:
-   - **Project / property name** — a stable name for one property or project, for example `Mövenpick Resort Taba`. This is also the local learning-profile name.
-   - **Project context** — confirmed facts you explicitly want to make available, such as property name, location, design intent or official room names.
-   - **Shared project tags** — optional terms to add to each saved image.
-   - **Folder-name hints** — enable only when the displayed labels are useful and intentional, for example `AlFresco Restaurant`.
-4. Review the compact list. Edit inaccurate title, keywords or Format description. Untick any image you do not want saved.
+3. In **AI model for this batch**, keep or change the provider and model. A warning shows if that provider has no saved key.
+4. In **Project details**, set:
+   - **Project / property name** — a stable name for one property or project, for example `Mövenpick Resort Taba`. Approved keywords are remembered under this name.
+   - **Confirmed facts** — facts you explicitly want used, such as property name, location, design intent or official room names.
+   - **Keywords for every photo** — optional terms added to each saved image.
+   - **Folder names** — tick only when the displayed labels are useful, for example `AlFresco Restaurant`.
+5. Under **What to create**, tick the fields you want. The review shows only those fields.
+6. Review each photo card. Correct the title, keywords or description (a counter shows the 255-character limit) and untick any photo you do not want saved.
+7. Adjust the portfolio rating where your judgement differs. **Also set Lightroom stars & colour labels** is off initially, and every photo has its own opt-out.
+8. Choose **Save**. **Discard…** asks before throwing away results you have already paid for.
 
-The complete analysis prompt, model, creativity and request pace are grouped under **Show advanced settings**. You can edit the prompt and restore the standard version. Batch review uses Lightroom's own catalogue-photo preview; the temporary metadata-free derivative is deleted immediately after analysis.
-5. Adjust the portfolio suggestion when your editorial judgement differs. If **Apply Lightroom ratings & labels** is enabled, FrameSense can also write the reviewed score and mapped colour to Lightroom. The master option is off initially and every image has its own opt-out.
-6. Save selected rows.
+**Show analysis prompt** reveals the full prompt for editing, with **Restore standard prompt**. Creativity and the pause between photos are in Plug-in Manager under **Advanced (optional)**. The temporary copy sent to the provider is deleted immediately after analysis.
 
 ## Learning profiles
 

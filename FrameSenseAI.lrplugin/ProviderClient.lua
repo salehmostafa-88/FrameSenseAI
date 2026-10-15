@@ -55,18 +55,21 @@ function Client.normalise(result)
         if keyword ~= '' then table.insert(keywords, keyword) end
     end
     keywords = Util.unique(keywords)
-    if #keywords < 1 then error('The provider returned no usable keywords.') end
     while #keywords > 12 do table.remove(keywords) end
-    local description = Util.clip(safeString(result.description), 255)
-    if description == '' then error('The provider returned no usable description.') end
+    -- Older prompts returned one combined "description"; use it for whichever field is missing.
+    local legacy = safeString(result.description)
+    local caption = Util.clip(safeString(result.caption) ~= '' and safeString(result.caption) or legacy, 500)
+    local altText = Util.clip(safeString(result.alt_text) ~= '' and safeString(result.alt_text) or legacy, 250)
+    local title = Util.clip(safeString(result.title), 120):gsub('%.$', '')
+    if title == '' and caption == '' and altText == '' and #keywords == 0 then error('The provider returned no usable metadata.') end
     local portfolio = type(result.portfolio) == 'table' and result.portfolio or {}
     local score = math.floor(math.max(1, math.min(5, tonumber(portfolio.score) or 3)) + 0.5)
     local labels = { [1] = 'Reject candidate', [2] = 'Needs review', [3] = 'Supporting', [4] = 'Portfolio', [5] = 'Hero' }
     return {
-        title = safeString(result.title),
+        title = title,
         keywords = keywords,
-        description = description,
-        altText = description,
+        caption = caption,
+        altText = altText,
         confidence = math.max(0, math.min(1, tonumber(result.confidence) or 0.5)),
         portfolio = {
             score = score,

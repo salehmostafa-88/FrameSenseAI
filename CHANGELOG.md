@@ -19,6 +19,15 @@ All notable changes are documented here.
 - Network failures report the error instead of stopping with a Lua comparison error.
 - The mocked tests no longer depend on the repository folder being named `framesense-ai-lightroom`.
 
+### Title, caption and alt text
+
+- Title, caption and alt text are now three separate fields with separate jobs: a website title line (`Space - Property, City, Country`), a ready-to-post caption and a descriptive alt text for search engines. Each can be turned on or off under What to create, and each has its own live character counter in the review.
+- Alt text is written to Lightroom's native **Alt Text** field (IPTC accessibility, Lightroom Classic 13.2+) as well as the FrameSense metadata field. If Lightroom refuses the field, the save still completes and a single notice explains where the alt text went.
+- Each photo's existing keywords are sent as confirmed facts (on by default, with an opt-out) so the AI can use the property, brand and location names. Purely numeric keywords and the photographer's own Creator / Copyright name are filtered out first.
+- Suggested keywords that are already on the photo are removed; the review lists the existing keywords for reference.
+- The prompt is split into editable guidance and fixed output rules the plug-in always appends, so a customised prompt cannot merge the three fields again. An unchanged copy of the old standard prompt upgrades automatically; customised prompts are kept.
+- The "Description / alt text" choice becomes separate Caption and Alt text choices, migrated from the previous setting.
+
 ### Interface redesign
 
 - Model fields are fixed menus, never free text, labelled by cost tier with an approximate cost per 100 photos: Gemini 3.1 Flash-Lite / 3.5 Flash / 3.1 Pro, and OpenAI GPT-5.4 nano / mini / GPT-5.4 / GPT-5.5. The `?` beside each menu lists prices per 1M tokens.

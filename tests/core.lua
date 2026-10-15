@@ -67,11 +67,35 @@ assert(normal.portfolio.strengths[1] == 'Clear light' and normal.portfolio.cauti
 local many = {}
 for i = 1, 20 do many[i] = 'term ' .. i end
 assert(#ProviderClient.normalise({ keywords = many, description = 'x' }).keywords == 12)
-expectError(function() ProviderClient.normalise({ keywords = {}, description = 'x' }) end, 'no usable keywords')
-expectError(function() ProviderClient.normalise({ keywords = { 'a' }, description = ' ' }) end, 'no usable description')
+assert(normal.caption == 'A pool.' and normal.altText == 'A pool.', 'legacy description should fill caption and alt text')
+local separate = ProviderClient.normalise({
+    title = 'Hotel Exterior at Dusk - Ramada by Wyndham Riyadh King Fahd Road, Riyadh, KSA.', keywords = { 'hotel exterior' },
+    caption = 'Dusk falls on Ramada by Wyndham Riyadh King Fahd Road.', alt_text = 'Hotel tower with red-lit windows behind palm trees at dusk in Riyadh',
+    description = 'ignored when the separate fields exist',
+})
+assert(separate.title == 'Hotel Exterior at Dusk - Ramada by Wyndham Riyadh King Fahd Road, Riyadh, KSA', 'title keeps its full name and loses the full stop')
+assert(separate.caption:find('^Dusk') and separate.altText:find('^Hotel tower'), 'caption and alt text must stay separate')
+assert(Util.length(ProviderClient.normalise({ alt_text = string.rep('word ', 80) }).altText) <= 250, 'alt text is limited to 250 characters')
+assert(#ProviderClient.normalise({ keywords = {}, caption = 'x' }).keywords == 0, 'a caption alone is still usable')
+expectError(function() ProviderClient.normalise({ keywords = {}, title = ' ', caption = ' ', alt_text = '' }) end, 'no usable metadata')
+
+-- Defaults: prompt contract and upgrade of the old standard prompt ---------------------------
+local Defaults = require 'Defaults'
+local full = Defaults.fullPrompt('My guidance.')
+assert(full:find('^My guidance%.') and full:find('"alt_text"', 1, true) and full:find('"caption"', 1, true), 'output rules must always be appended')
+local oldStandard = Defaults.legacyPrompts[1]
+local upgraded = { analysisPrompt = oldStandard:gsub('\n', '\r\n') .. '  ' }
+Defaults.initialize(upgraded)
+assert(upgraded.analysisPrompt == Defaults.defaultPrompt, 'unchanged old standard prompt should upgrade')
+local custom = { analysisPrompt = oldStandard .. '\nAlways mention the sea view.' }
+Defaults.initialize(custom)
+assert(custom.analysisPrompt:find('sea view', 1, true), 'a customised prompt must be kept')
+local migrated = { saveDescription = false }
+Defaults.initialize(migrated)
+assert(migrated.saveCaption == false and migrated.saveAltText == false and migrated.useExistingKeywords == true)
 
 -- ProviderClient.analyse: request contract --------------------------------------------------
-local analysis = '{"title":"Bar","keywords":["bar interior"],"description":"A bar.","confidence":0.9,"portfolio":{"score":3}}'
+local analysis = '{"title":"Bar","keywords":["bar interior"],"caption":"A bar.","alt_text":"Bar counter.","confidence":0.9,"portfolio":{"score":3}}'
 local function headerValue(headers, field)
     for _, header in ipairs(headers) do
         assert(type(header) == 'table' and header.field and header.value, 'LrHttp headers must be { field =, value = } entries')
@@ -152,4 +176,4 @@ LearningStore.remember('Mövenpick Taba', { { enabled = true, keywords = bulk } 
 vocabulary = LearningStore.get('Mövenpick Taba')
 assert(#vocabulary == 80 and vocabulary[80] == 'term 100', 'vocabulary should keep the 80 most recent terms')
 
-print('PASS: connection check messages, JSON escapes and emoji, UTF-8 clipping, folder hints, response normalising, LrHttp header format, retry/backoff, GPT-5 temperature, Gemini thought parts, network errors, learning profiles')
+print('PASS: separate title/caption/alt text, prompt contract and upgrade, connection check messages, JSON escapes and emoji, UTF-8 clipping, folder hints, response normalising, LrHttp header format, retry/backoff, GPT-5 temperature, Gemini thought parts, network errors, learning profiles')

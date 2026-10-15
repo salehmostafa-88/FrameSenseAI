@@ -10,10 +10,21 @@ local photos = {}
 local writes, learned, applied = {}, false, {}
 local confirms, reviewCancels = {}, 0
 local paths = { '/test/Restaurant/frame1.jpg', '/test/Restaurant/frame2.jpg', '/test/Restaurant/frame3.jpg', '/test/Restaurant/frame4.CR3' }
+-- Keywords already on each photo, as Lightroom's Keyword Tags panel lists them.
+local formattedMetadata = {
+    keywordTags = '27137, 1297960, Hotel, Meeting Room, Ramada Plaza Rize, saleh mostafa, Wyndham - EMEA',
+    creator = 'Saleh Mostafa',
+    copyright = '© 2025 Saleh Mostafa',
+}
 for i = 1, #paths do
     photos[i] = {
         getRawMetadata = function() return paths[i] end,
-        setRawMetadata = function(_, key, value) writes[#writes + 1] = { i, key, value } end,
+        getFormattedMetadata = function(_, key) return formattedMetadata[key] end,
+        setRawMetadata = function(_, key, value)
+            -- Photo 3 simulates a Lightroom version that refuses the native Alt Text field.
+            if i == 3 and key == 'altTextAccessibility' then error('Unknown key: altTextAccessibility') end
+            writes[#writes + 1] = { i, key, value }
+        end,
         setPropertyForPlugin = function() end,
         addKeyword = function(_, keyword) applied[i] = applied[i] or {}; table.insert(applied[i], keyword) end,
     }
@@ -74,12 +85,18 @@ local namespaces = {
     assert(p.selectedSummary:find('3 of 3', 1, true), 'missing live selection summary')
     if reviewCancels == 0 then reviewCancels = 1; return 'cancel' end -- first Cancel is withdrawn at the confirmation
     p.title2 = '   ' -- a cleared title must not wipe the existing catalogue title
+    assert(p.caption1 == 'Test caption' and p.altText1 == 'Test alt text', 'caption and alt text must be separate fields')
+    assert(p.keywords1 == 'restaurant interior, banquette seating', 'keywords already on the photo must not be suggested again')
+    assert(findKind(spec.contents, 'edit_field') == 12, 'expected title, caption, alt text and keyword fields per photo')
     assert(findKind(spec.contents, 'group_box') >= 3, 'missing review rows')
     assert(findKind(spec.contents, 'catalog_photo') == 3, 'missing catalogue previews')
     p.applyRatings = true
     p.score1 = '5'; p.score2 = '4'; p.score3 = '3'
     return 'ok'
- end, message = function(title) if not title:find('no API key', 1, true) then error('Unexpected error dialog: ' .. title) end; table.insert(messages, title) end,
+ end, message = function(title)
+    if not (title:find('no API key', 1, true) or title:find('alt text saved', 1, true)) then error('Unexpected error dialog: ' .. title) end
+    table.insert(messages, title)
+ end,
  confirm = function(message) table.insert(confirms, message); return message:find('Discard', 1, true) and 'cancel' or 'ok' end },
  LrExportSession = function(spec)
     assert(spec.photosToExport[1].getRawMetadata, 'expected photo object')
@@ -103,7 +120,11 @@ local namespaces = {
 }
 function import(name) return assert(namespaces[name], 'Unsupported namespace ' .. name) end
 package.loaded.LearningStore = { get = function() return {} end, remember = function() learned = true end }
-package.loaded.ProviderClient = { analyse = function() return { title = 'Test title', keywords = {'restaurant interior', 'banquette seating'}, description = 'Test description', confidence = .9, portfolio = {score = 3, strengths = {'Strong composition'}, cautions = {'Crop is tight'}} } end }
+local sentContexts, sentPrompts = {}, {}
+package.loaded.ProviderClient = { analyse = function(settings, _, context)
+    table.insert(sentContexts, context); table.insert(sentPrompts, settings.prompt)
+    return { title = 'Test title', keywords = {'restaurant interior', 'banquette seating', 'hotel'}, caption = 'Test caption', altText = 'Test alt text', confidence = .9, portfolio = {score = 3, strengths = {'Strong composition'}, cautions = {'Crop is tight'}} }
+end }
 prefs.sharedTags = 'Banquette Seating, Test Resort'
 _PLUGIN = {}
 local realOpen = io.open
@@ -132,10 +153,22 @@ for _, write in ipairs(writes) do
     if write[2] == 'colorNameForLabel' and write[3] == 'blue' then sawBlue = true end
 end
 assert(sawFive and sawBlue, 'rating or active colour-label mapping was not written')
+local captions, altTexts = 0, 0
+for _, write in ipairs(writes) do
+    if write[2] == 'caption' then assert(write[3] == 'Test caption'); captions = captions + 1 end
+    if write[2] == 'altTextAccessibility' then assert(write[3] == 'Test alt text'); altTexts = altTexts + 1 end
+end
+assert(captions == 3 and altTexts == 2, 'caption and native Alt Text should be written separately')
+assert(#messages == 1 and messages[1]:find('alt text saved', 1, true), 'a refused Alt Text field should be reported once')
+messages = {}
+local context = sentContexts[1]
+assert(context:find('Ramada Plaza Rize', 1, true) and context:find('Meeting Room', 1, true), 'existing keywords should be sent as facts')
+assert(not context:find('27137', 1, true) and not context:find('saleh mostafa', 1, true), 'job numbers and the photographer name must not be sent')
+assert(sentPrompts[1]:find('Test remembered instruction', 1, true) and sentPrompts[1]:find('OUTPUT RULES', 1, true), 'prompt must end with the fixed output rules')
 -- Second run: switching to a provider without a saved key stops before any upload, keeping edits.
 missingKeyRun = true
 local callsBefore = calls
 dofile(pluginDir .. 'AnalyzeSelected.lua')
 assert(#messages == 1 and calls == callsBefore, 'missing key should stop before analysis')
 assert(prefs.provider == 'openai' and prefs.projectContext == 'Kept project facts', 'preflight edits should be kept')
-print('PASS: missing-key guard keeps edits and sends nothing; contexts, RAW skipped with consent, prompt persistence, catalog previews, cancel confirmation, three rows, existing keywords reused, blank title preserved, rating opt-in, native colour assignment')
+print('PASS: separate title/caption/alt text, existing keywords as facts minus IDs and credit, no duplicate suggestions, native Alt Text with fallback notice, missing-key guard keeps edits and sends nothing; contexts, RAW skipped with consent, prompt persistence, catalog previews, cancel confirmation, three rows, existing keywords reused, blank title preserved, rating opt-in, native colour assignment')

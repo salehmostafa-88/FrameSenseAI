@@ -50,7 +50,9 @@ local function preflight(photos, context)
     property.showAdvanced = prefs.showAdvanced
     property.saveTitle = prefs.saveTitle
     property.saveKeywords = prefs.saveKeywords
-    property.saveDescription = prefs.saveDescription
+    property.saveCaption = prefs.saveCaption
+    property.saveAltText = prefs.saveAltText
+    property.useExistingKeywords = prefs.useExistingKeywords
     property.generatePortfolio = prefs.generatePortfolio
 
     -- Fixed point widths keep the dialog well inside a 1280-point laptop screen.
@@ -118,6 +120,11 @@ local function preflight(photos, context)
                     help('Confirmed facts', 'Facts you want used, such as the property name, location, official venue names or design information. FrameSense will not infer these facts from appearance.'),
                 },
                 f:row {
+                    label('Existing keywords'),
+                    f:checkbox { value = bind 'useExistingKeywords', title = 'Use each photo’s keywords as confirmed facts' },
+                    help('Existing keywords', 'Sends the keywords already on each photo so the AI can take the property, brand and location names from them (for example "Ramada by Wyndham Riyadh King Fahd Road", "Riyadh") and avoid suggesting them again.\n\nPurely numeric keywords such as job numbers, and your own Creator / Copyright name, are never sent.'),
+                },
+                f:row {
                     label('Keywords for every photo'),
                     f:edit_field { value = bind 'sharedTags', width = fieldWidth },
                     help('Keywords for every photo', 'Optional confirmed keywords added to every saved photo in this batch, separated by commas.'),
@@ -134,9 +141,10 @@ local function preflight(photos, context)
             f:row {
                 f:checkbox { value = bind 'saveTitle', title = 'Title' },
                 f:checkbox { value = bind 'saveKeywords', title = 'Keywords' },
-                f:checkbox { value = bind 'saveDescription', title = 'Description / alt text' },
+                f:checkbox { value = bind 'saveCaption', title = 'Caption' },
+                f:checkbox { value = bind 'saveAltText', title = 'Alt text' },
                 f:checkbox { value = bind 'generatePortfolio', title = 'Portfolio rating' },
-                help('Portfolio rating', 'A suggestion based on the visible image, not a full-resolution technical check. Lightroom stars and colour labels change only if you turn that on in the review.'),
+                help('What to create', 'Title — one line for under the photo on your website: "Space - Property, City, Country".\n\nCaption — a ready-to-post sentence or two for sharing the photo online.\n\nAlt text — a plain description for search engines and screen readers, saved to Lightroom’s Alt Text field.\n\nKeywords — new, frame-specific keywords not already on the photo.\n\nPortfolio rating — a suggestion from the visible image, not a full-resolution technical check. Stars and colour labels change only if you turn that on in the review.'),
             },
         },
         f:checkbox { value = bind 'showAdvanced', title = 'Show analysis prompt' },
@@ -149,7 +157,7 @@ local function preflight(photos, context)
                 },
             },
         },
-        f:static_text { title = 'Privacy: only a temporary 1600px JPEG copy without metadata, and its filename, are sent. Folder paths, GPS and existing keywords are not.', width = fieldWidth + 180, height_in_lines = 2 },
+        f:static_text { title = 'Privacy: a temporary 1600px JPEG copy without metadata and its filename are sent, plus the facts, folder names and existing keywords you allow above. Folder paths and GPS are never sent.', width = fieldWidth + 180, height_in_lines = 2 },
     }
     if LrDialogs.presentModalDialog { title = 'FrameSense AI — analyse ' .. #photos .. ' photo' .. (#photos == 1 and '' or 's'), contents = dialog, actionVerb = 'Analyse' } ~= 'ok' then return nil end
 
@@ -165,30 +173,64 @@ local function preflight(photos, context)
     prefs.showAdvanced = property.showAdvanced and true or false
     prefs.saveTitle = property.saveTitle and true or false
     prefs.saveKeywords = property.saveKeywords and true or false
-    prefs.saveDescription = property.saveDescription and true or false
+    prefs.saveCaption = property.saveCaption and true or false
+    prefs.saveAltText = property.saveAltText and true or false
+    prefs.useExistingKeywords = property.useExistingKeywords and true or false
     prefs.generatePortfolio = property.generatePortfolio and true or false
     -- Choices above are saved first, so nothing typed is lost when the key is missing.
     if not keySaved(prefs.provider) then
         LrDialogs.message('FrameSense AI — no API key', 'Add your ' .. Defaults.providerInfo[prefs.provider].keyName .. ' in File → Plug-in Manager → FrameSense AI, then run the analysis again. Your project details have been kept.', 'warning')
         return nil
     end
-    if not (prefs.saveTitle or prefs.saveKeywords or prefs.saveDescription or prefs.generatePortfolio) then
+    if not (prefs.saveTitle or prefs.saveKeywords or prefs.saveCaption or prefs.saveAltText or prefs.generatePortfolio) then
         LrDialogs.message('FrameSense AI — nothing to create', 'Tick at least one item under What to create.', 'warning')
         return nil
     end
     return {
         provider = prefs.provider, geminiModel = prefs.geminiModel, openaiModel = prefs.openaiModel,
         geminiApiKey = prefs.geminiApiKey, openaiApiKey = prefs.openaiApiKey,
-        temperature = prefs.temperature, prompt = prefs.analysisPrompt,
+        temperature = prefs.temperature, prompt = Defaults.fullPrompt(prefs.analysisPrompt),
     }
 end
 
-local function makeContext(photo, photoPath)
+local function formatted(photo, field)
+    local ok, value = pcall(photo.getFormattedMetadata, photo, field)
+    return ok and type(value) == 'string' and value or ''
+end
+
+-- The photo's own keywords, minus job numbers / IDs and the photographer's own name,
+-- which are useless to the AI and should never reach a title or caption.
+local function existingKeywords(photo)
+    local credits = {}
+    for _, field in ipairs { 'creator', 'copyright' } do
+        local credit = string.lower(Util.trim(formatted(photo, field):gsub('©', ''):gsub('%(c%)', ''):gsub('[Cc]opyright', ''):gsub('[%d%p]', ' '):gsub('%s+', ' ')))
+        if credit ~= '' then credits[credit] = true end
+    end
+    local result = {}
+    for _, term in ipairs(Util.split(formatted(photo, 'keywordTags'), ',')) do
+        if not term:match('^[%d%p%s]+$') and not credits[string.lower(term)] then table.insert(result, term) end
+    end
+    return Util.unique(result)
+end
+
+local function withoutExisting(keywords, existing)
+    local seen, result = {}, {}
+    for _, term in ipairs(existing or {}) do seen[string.lower(term)] = true end
+    for _, term in ipairs(keywords or {}) do
+        if not seen[string.lower(term)] then table.insert(result, term) end
+    end
+    return result
+end
+
+local function makeContext(photo, photoPath, existing)
     local pieces = {
         'Analyse this JPEG for factual, frame-specific Lightroom metadata.',
         'Filename: ' .. Util.leaf(photoPath),
     }
-    if prefs.projectContext ~= '' then table.insert(pieces, 'Photographer-approved project context: ' .. prefs.projectContext) end
+    if prefs.projectContext ~= '' then table.insert(pieces, 'Photographer-confirmed facts for this project: ' .. prefs.projectContext) end
+    if prefs.useExistingKeywords and #existing > 0 then
+        table.insert(pieces, 'Existing keywords already on this photo (photographer-confirmed; use them for property, brand, venue and location names; do not repeat them as new keywords): ' .. table.concat(existing, ', '))
+    end
     if prefs.folderHints then
         local hints = Util.folderHints(photoPath)
         if #hints > 0 then table.insert(pieces, 'Photographer-approved local folder naming hints: ' .. table.concat(hints, ', ') .. '. They are labels only, never a path.') end
@@ -244,10 +286,13 @@ local function review(records, context, failureCount)
         for i = 1, #records do if property['enabled' .. i] then selected = selected + 1 end end
         property.selectedSummary = selected .. ' of ' .. #records .. ' photos will be saved.'
     end
-    local descriptionCount = function(i)
-        return bind { key = 'description' .. i, transform = function(value)
+    -- Live character counters: ideal is advice, limit is where saving shortens the text.
+    local function counter(key, ideal, limit)
+        return bind { key = key, transform = function(value)
             local count = Util.length(Util.trim(value))
-            return count .. ' / 255 characters' .. (count > 255 and ' — will be shortened' or '')
+            if count > limit then return count .. ' / ' .. limit .. ' — will be shortened' end
+            if count > ideal then return count .. ' characters — aim for ' .. ideal end
+            return count .. ' / ' .. ideal
         end }
     end
     local ratingItems = {
@@ -267,7 +312,8 @@ local function review(records, context, failureCount)
         property['ratingEnabled' .. i] = true
         property['title' .. i] = record.title
         property['keywords' .. i] = table.concat(record.keywords, ', ')
-        property['description' .. i] = record.description
+        property['caption' .. i] = record.caption
+        property['altText' .. i] = record.altText
         property['score' .. i] = tostring(record.portfolio.score)
         property:addObserver('enabled' .. i, updateSelectedCount)
     end
@@ -286,20 +332,30 @@ local function review(records, context, failureCount)
             if #(record.portfolio.cautions or {}) > 0 then reason = reason .. '\nCheck: ' .. table.concat(record.portfolio.cautions, '; ') end
             -- Only the fields chosen under What to create are shown.
             local fields = { spacing = f:label_spacing() }
+            local function heading(title, count)
+                table.insert(fields, f:row {
+                    f:static_text { title = title, width = fieldWidth - 190 },
+                    f:static_text { title = count or '', alignment = 'right', width = 190 },
+                })
+            end
             if prefs.saveTitle then
-                table.insert(fields, f:static_text { title = 'Title' })
+                heading('Title — one line for your website', counter('title' .. i, 90, math.huge))
                 table.insert(fields, f:edit_field { value = bind('title' .. i), width = fieldWidth })
             end
-            if prefs.saveKeywords then
-                table.insert(fields, f:static_text { title = 'Keywords (comma-separated)' })
-                table.insert(fields, f:edit_field { value = bind('keywords' .. i), width = fieldWidth, height_in_lines = 3 })
+            if prefs.saveCaption then
+                heading('Caption — to post with the photo', counter('caption' .. i, 300, 500))
+                table.insert(fields, f:edit_field { value = bind('caption' .. i), width = fieldWidth, height_in_lines = 3 })
             end
-            if prefs.saveDescription then
-                table.insert(fields, f:row {
-                    f:static_text { title = 'Description / alt text', width = fieldWidth - 160 },
-                    f:static_text { title = descriptionCount(i), alignment = 'right', width = 160 },
-                })
-                table.insert(fields, f:edit_field { value = bind('description' .. i), width = fieldWidth, height_in_lines = 4 })
+            if prefs.saveAltText then
+                heading('Alt text — for search engines', counter('altText' .. i, 125, 250))
+                table.insert(fields, f:edit_field { value = bind('altText' .. i), width = fieldWidth, height_in_lines = 3 })
+            end
+            if prefs.saveKeywords then
+                heading('New keywords (comma-separated)')
+                table.insert(fields, f:edit_field { value = bind('keywords' .. i), width = fieldWidth, height_in_lines = 2 })
+            end
+            if #(record.existingKeywords or {}) > 0 then
+                table.insert(fields, f:static_text { title = 'Already on photo: ' .. table.concat(record.existingKeywords, ', '), width = fieldWidth, height_in_lines = 2, enabled = false })
             end
             local side = { spacing = f:label_spacing(), f:static_text { title = confidenceText(record.confidence), width = sideWidth } }
             if prefs.generatePortfolio then
@@ -349,9 +405,9 @@ local function review(records, context, failureCount)
         record.ratingEnabled = property['ratingEnabled' .. i] and true or false
         record.applyRating = prefs.applyRatings and record.ratingEnabled
         record.title = Util.trim(property['title' .. i])
-        record.keywords = Util.unique(Util.split(property['keywords' .. i], ','))
-        record.description = Util.clip(property['description' .. i], 255)
-        record.altText = record.description
+        record.keywords = withoutExisting(Util.unique(Util.split(property['keywords' .. i], ',')), record.existingKeywords)
+        record.caption = Util.clip(property['caption' .. i], 500)
+        record.altText = Util.clip(property['altText' .. i], 250)
         record.portfolio.score = tonumber(property['score' .. i]) or 3
         record.portfolio.label = labels[property['score' .. i]] or 'Supporting'
     end
@@ -374,6 +430,7 @@ end
 local function save(records)
     local catalog = LrApplication.activeCatalog()
     local keywords = {}
+    local altTextFallbacks = 0
     -- returnExisting = true: without it createKeyword returns false for any keyword
     -- already in the catalogue, and that keyword was silently not applied.
     local function keywordFor(term)
@@ -386,9 +443,14 @@ local function save(records)
             if record.enabled then
                 -- A blank field never overwrites what is already in the catalogue.
                 if prefs.saveTitle and record.title ~= '' then record.photo:setRawMetadata('title', record.title) end
-                if prefs.saveDescription and record.description ~= '' then
-                    record.photo:setRawMetadata('caption', record.description)
+                if prefs.saveCaption and record.caption ~= '' then record.photo:setRawMetadata('caption', record.caption) end
+                if prefs.saveAltText and record.altText ~= '' then
                     record.photo:setPropertyForPlugin(_PLUGIN, 'formatAltText', record.altText)
+                    -- Lightroom's own Alt Text field (IPTC accessibility, exported with the file).
+                    -- Older Lightroom versions refuse this key; the FrameSense field above still holds it.
+                    if not pcall(record.photo.setRawMetadata, record.photo, 'altTextAccessibility', record.altText) then
+                        altTextFallbacks = altTextFallbacks + 1
+                    end
                 end
                 if prefs.generatePortfolio then
                     record.photo:setPropertyForPlugin(_PLUGIN, 'portfolioScore', tostring(record.portfolio.score))
@@ -412,6 +474,9 @@ local function save(records)
         end
     end)
     if prefs.saveKeywords then LearningStore.remember(prefs.learningProfile, records) end
+    if altTextFallbacks > 0 then
+        LrDialogs.message('FrameSense AI — alt text saved in the FrameSense panel', 'This Lightroom version did not let the plug-in fill its Alt Text field (Lightroom Classic 13.2 or later is needed), so the alt text for ' .. altTextFallbacks .. ' photo(s) is in the Metadata panel under "Format image description / alt text". Everything else was saved.', 'info')
+    end
 end
 
 local maxBatch = 50
@@ -472,7 +537,10 @@ LrTasks.startAsyncTask(function()
             local ok, result = LrTasks.pcall(function()
                 local base64
                 base64, previewPath = renderDerivative(photo, context)
-                local analysis = ProviderClient.analyse(settings, base64, makeContext(photo, path))
+                local existing = existingKeywords(photo)
+                local analysis = ProviderClient.analyse(settings, base64, makeContext(photo, path, existing))
+                analysis.existingKeywords = existing
+                analysis.keywords = withoutExisting(analysis.keywords, existing)
                 pcall(LrFileUtils.delete, previewPath)
                 previewPath = nil
                 analysis.photo, analysis.filename = photo, Util.leaf(path)

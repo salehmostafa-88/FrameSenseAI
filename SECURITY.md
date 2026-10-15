@@ -9,10 +9,11 @@ The intended request includes:
 - the temporary JPEG pixels;
 - the image's filename (not its folder path);
 - the photographer-approved Project context;
+- unless switched off, the keywords already on each photo, minus purely numeric keywords (job numbers, IDs) and the photo's Creator / Copyright name;
 - locally retained approved vocabulary for the active Learning profile; and
 - only when explicitly enabled, immediate folder and parent-folder **labels** for the selected image.
 
-It excludes original file paths, folder structures, existing keywords, GPS and embedded export metadata.
+It excludes original file paths, folder structures, GPS and embedded export metadata.
 
 ## API keys
 
@@ -20,7 +21,7 @@ Keys are entered in Lightroom Plug-in Manager and stored by Lightroom as local p
 
 ## Responsible use
 
-Review every proposed title, caption, image description and keyword before saving. Do not use the plug-in to identify people or extract personal data. The default prompt forbids name/face recognition, personal-attribute inference and transcription of visible IDs, documents, screens and licence plates.
+Review every proposed title, caption, alt text and keyword before saving. Do not use the plug-in to identify people or extract personal data. The default prompt forbids name/face recognition, personal-attribute inference and transcription of visible IDs, documents, screens and licence plates.
 
 ## Reporting a vulnerability
 

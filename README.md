@@ -12,7 +12,11 @@ For 1–50 selected, locally available JPEGs, FrameSense AI:
 
 1. Renders a temporary 1600px JPEG derivative with export metadata disabled.
 2. Sends that derivative directly to your selected Gemini or OpenAI API account.
-3. Proposes a title, 6–12 flat keywords, a factual caption/Format image description, a confidence indicator and a portfolio-usefulness suggestion.
+3. Proposes three separate texts plus keywords, a confidence indicator and a portfolio-usefulness suggestion:
+   - **Title** — the one line under the photo on your website: `Space - Property, City, Country`, for example `Hotel Exterior at Dusk - Ramada by Wyndham Riyadh King Fahd Road, Riyadh, KSA`.
+   - **Caption** — one or two ready-to-post sentences for sharing the photo online.
+   - **Alt text** — a plain, specific description for search engines and screen readers, ideally 80–125 characters, saved to Lightroom's own **Alt Text** field.
+   - **Keywords** — 6–12 new, frame-specific keywords that are not already on the photo.
 4. Presents all results in one scrollable multi-image review list.
 5. Saves only the rows you approve, then remembers the approved vocabulary under the named learning profile on your own Mac.
 
@@ -30,7 +34,8 @@ The plug-in also supports non-portrait food, product, landscape, cityscape, vehi
 
 - Only a temporary, resized JPEG derivative is transmitted to Gemini or OpenAI.
 - The code requests an export with metadata disabled and location metadata removed.
-- The image's filename is included as context. Original file paths, GPS, existing Lightroom keywords and folder structures are not transmitted.
+- The image's filename is included as context. Original file paths, GPS and folder structures are not transmitted.
+- **Existing keywords are sent by default** so property, brand and location names can be used in the title, caption and alt text. Untick **Use each photo's keywords as confirmed facts** to stop this. Purely numeric keywords (job numbers, IDs) and your own Creator / Copyright name are never sent.
 - **Folder-name hints are off by default.** If enabled, the plug-in derives only the immediate folder and parent-folder labels for each selected photo. Full paths are never sent.
 - A folder label is treated as optional photographer-provided context; the model is instructed to use it only when it matches the visible scene.
 - No local bridge, Dropbox connection, local web server or catalogue-wide index is used.
@@ -80,10 +85,11 @@ Do not put your API key in project context, filenames or prompts. Set a provider
 4. In **Project details**, set:
    - **Project / property name** — a stable name for one property or project, for example `Mövenpick Resort Taba`. Approved keywords are remembered under this name.
    - **Confirmed facts** — facts you explicitly want used, such as property name, location, design intent or official room names.
+   - **Existing keywords** — on by default; the AI takes property, brand and location names from each photo's own keywords and does not suggest them again.
    - **Keywords for every photo** — optional terms added to each saved image.
    - **Folder names** — tick only when the displayed labels are useful, for example `AlFresco Restaurant`.
 5. Under **What to create**, tick the fields you want. The review shows only those fields.
-6. Review each photo card. Correct the title, keywords or description (a counter shows the 255-character limit) and untick any photo you do not want saved.
+6. Review each photo card: title, caption, alt text and new keywords each have their own field and live character counter, and the keywords already on the photo are listed for reference. Untick any photo you do not want saved.
 7. Adjust the portfolio rating where your judgement differs. **Also set Lightroom stars & colour labels** is off initially, and every photo has its own opt-out.
 8. Choose **Save**. **Discard…** asks before throwing away results you have already paid for.
 

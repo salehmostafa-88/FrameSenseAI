@@ -193,24 +193,48 @@ local function preflight(photos, context)
     }
 end
 
+-- Catalog reads can yield, and a plain pcall cannot be yielded across in Lightroom's Lua 5.1:
+-- it fails with "attempt to yield across metamethod/C-call boundary" and the value is lost.
+-- LrTasks.pcall is the yield-safe form. Returns the value, or '' plus the error.
 local function formatted(photo, field)
-    local ok, value = pcall(photo.getFormattedMetadata, photo, field)
-    return ok and type(value) == 'string' and value or ''
+    local ok, value = LrTasks.pcall(function() return photo:getFormattedMetadata(field) end)
+    if not ok then return '', tostring(value) end
+    return type(value) == 'string' and value or ''
+end
+
+-- Keyword names straight from the LrKeyword objects, used when the formatted list is empty.
+local function keywordNames(photo)
+    local ok, keywords = LrTasks.pcall(function() return photo:getRawMetadata('keywords') end)
+    if not ok then return {}, tostring(keywords) end
+    local names = {}
+    for _, keyword in ipairs(type(keywords) == 'table' and keywords or {}) do
+        local named, name = LrTasks.pcall(function() return keyword:getName() end)
+        if named and type(name) == 'string' then table.insert(names, name) end
+    end
+    return names
 end
 
 -- The photo's own keywords, minus job numbers / IDs and the photographer's own name,
 -- which are useless to the AI and should never reach a title or caption.
+-- Also returns an error message when the keywords could not be read, so the review can say so.
 local function existingKeywords(photo)
     local credits = {}
     for _, field in ipairs { 'creator', 'copyright' } do
         local credit = string.lower(Util.trim(formatted(photo, field):gsub('©', ''):gsub('%(c%)', ''):gsub('[Cc]opyright', ''):gsub('[%d%p]', ' '):gsub('%s+', ' ')))
         if credit ~= '' then credits[credit] = true end
     end
+    local tags, readError = formatted(photo, 'keywordTags')
+    local terms = Util.split(tags, ',')
+    if #terms == 0 then
+        local fallbackError
+        terms, fallbackError = keywordNames(photo)
+        if #terms > 0 then readError = nil else readError = readError or fallbackError end
+    end
     local result = {}
-    for _, term in ipairs(Util.split(formatted(photo, 'keywordTags'), ',')) do
+    for _, term in ipairs(terms) do
         if not term:match('^[%d%p%s]+$') and not credits[string.lower(term)] then table.insert(result, term) end
     end
-    return Util.unique(result)
+    return Util.unique(result), readError
 end
 
 local function withoutExisting(keywords, existing)
@@ -364,6 +388,9 @@ local function review(records, context, failureCount)
                     table.insert(fields, f:static_text { title = '⚠ Property name "' .. record.propertyName .. '" from the keywords is not in the text. Add it if it belongs.', width = fieldWidth, height_in_lines = 2 })
                 end
             end
+            if record.keywordError then
+                table.insert(fields, f:static_text { title = '⚠ Could not read this photo’s keywords, so they were not used: ' .. record.keywordError, width = fieldWidth, height_in_lines = 2 })
+            end
             if #(record.existingKeywords or {}) > 0 then
                 table.insert(fields, f:static_text { title = 'Already on photo: ' .. table.concat(record.existingKeywords, ', '), width = fieldWidth, height_in_lines = 2, enabled = false })
             end
@@ -372,7 +399,10 @@ local function review(records, context, failureCount)
                 table.insert(side, f:static_text { title = 'Portfolio rating' })
                 table.insert(side, f:popup_menu { value = bind('score' .. i), items = ratingItems, width = sideWidth })
                 table.insert(side, f:checkbox { value = bind('ratingEnabled' .. i), enabled = bind 'applyRatings', title = 'Set stars & colour label' })
-                table.insert(side, f:static_text { title = reason, width = sideWidth, height_in_lines = 6 })
+                -- About 34 characters fit a line at this width; size the box to the whole text.
+                local lines = 0
+                for paragraph in (reason .. '\n'):gmatch('(.-)\n') do lines = lines + math.max(1, math.ceil(Util.length(paragraph) / 34)) end
+                table.insert(side, f:static_text { title = reason, width = sideWidth, height_in_lines = math.max(4, lines + 1) })
             end
             table.insert(rows, f:group_box {
                 title = record.filename, fill_horizontal = 1,
@@ -458,7 +488,7 @@ local function save(records)
                     record.photo:setPropertyForPlugin(_PLUGIN, 'formatAltText', record.altText)
                     -- Lightroom's own Alt Text field (IPTC accessibility, exported with the file).
                     -- Older Lightroom versions refuse this key; the FrameSense field above still holds it.
-                    if not pcall(record.photo.setRawMetadata, record.photo, 'altTextAccessibility', record.altText) then
+                    if not LrTasks.pcall(function() record.photo:setRawMetadata('altTextAccessibility', record.altText) end) then
                         altTextFallbacks = altTextFallbacks + 1
                     end
                 end
@@ -547,9 +577,10 @@ LrTasks.startAsyncTask(function()
             local ok, result = LrTasks.pcall(function()
                 local base64
                 base64, previewPath = renderDerivative(photo, context)
-                local existing = existingKeywords(photo)
+                local existing, keywordError = existingKeywords(photo)
                 local analysis = ProviderClient.analyse(settings, base64, makeContext(photo, path, existing))
                 analysis.existingKeywords = existing
+                analysis.keywordError = keywordError
                 analysis.propertyName = Util.propertyName(existing)
                 analysis.keywords = withoutExisting(analysis.keywords, existing)
                 pcall(LrFileUtils.delete, previewPath)

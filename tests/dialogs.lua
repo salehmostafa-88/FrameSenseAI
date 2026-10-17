@@ -3,7 +3,20 @@
 local testDir = (arg and arg[0] or ''):match('^(.*)[/\\]') or '.'
 local pluginDir = testDir .. '/../FrameSenseAI.lrplugin/'
 package.path = pluginDir .. '?.lua;' .. package.path
-local active, tables, dialogs, calls = nil, 0, 0, 0
+local active, tables, dialogs = nil, 0, 0
+-- Lightroom's Lua 5.1 cannot yield across a plain pcall. Catalog reads may yield, so the
+-- mock fails them whenever a plain pcall is on the stack, exactly as Lightroom does.
+local realPcall, plainPcallDepth = pcall, 0
+local function pack(...) return { n = select('#', ...), ... } end
+pcall = function(fn, ...)
+    plainPcallDepth = plainPcallDepth + 1
+    local results = pack(realPcall(fn, ...))
+    plainPcallDepth = plainPcallDepth - 1
+    return unpack(results, 1, results.n)
+end
+local function catalogRead()
+    if plainPcallDepth > 0 then error('attempt to yield across metamethod/C-call boundary') end
+end
 local prefs = { geminiApiKey = 'fake-test-key' }
 local messages = {}
 local photos = {}
@@ -19,7 +32,7 @@ local formattedMetadata = {
 for i = 1, #paths do
     photos[i] = {
         getRawMetadata = function() return paths[i] end,
-        getFormattedMetadata = function(_, key) return formattedMetadata[key] end,
+        getFormattedMetadata = function(_, key) catalogRead(); return formattedMetadata[key] end,
         setRawMetadata = function(_, key, value)
             -- Photo 3 simulates a Lightroom version that refuses the native Alt Text field.
             if i == 3 and key == 'altTextAccessibility' then error('Unknown key: altTextAccessibility') end
@@ -88,6 +101,15 @@ local namespaces = {
     assert(p.caption1 == 'Test caption' and p.altText1 == 'Test alt text', 'caption and alt text must be separate fields')
     assert(p.keywords1 == 'restaurant interior, banquette seating', 'keywords already on the photo must not be suggested again')
     assert(findKind(spec.contents, 'edit_field') == 12, 'expected title, caption, alt text and keyword fields per photo')
+    local function findText(node, prefix)
+        if type(node) ~= 'table' then return nil end
+        if node.kind == 'static_text' and type(node.title) == 'string' and node.title:find(prefix, 1, true) == 1 then return node end
+        for _, child in pairs(node) do local found = findText(child, prefix); if found then return found end end
+    end
+    assert(findText(spec.contents, 'Already on photo: Hotel, Meeting Room, Ramada Plaza Rize'), 'existing keywords were not read')
+    assert(not findText(spec.contents, '⚠ Could not read'), 'keyword read reported an error')
+    local feedback = assert(findText(spec.contents, 'Strong composition'), 'portfolio feedback missing')
+    assert(feedback.height_in_lines >= 4, 'feedback box too short for its text')
     assert(findKind(spec.contents, 'group_box') >= 3, 'missing review rows')
     assert(findKind(spec.contents, 'catalog_photo') == 3, 'missing catalogue previews')
     p.applyRatings = true
@@ -115,7 +137,7 @@ local namespaces = {
  LrProgressScope = function() return { isCanceled = function() return false end, setPortionComplete = function() end, setCaption = function() end, done = function() end } end,
  LrStringUtils = { encodeBase64 = function() return 'mock' end },
  LrSystemInfo = { displayInfo = function() return { { width = 1440, height = 900 } } end },
- LrTasks = { startAsyncTask = function(fn) fn() end, pcall = function(fn) calls = calls + 1; return pcall(fn) end, sleep = function() end },
+ LrTasks = { startAsyncTask = function(fn) fn() end, pcall = function(fn, ...) return realPcall(fn, ...) end, sleep = function() end },
  LrView = { osFactory = function() return factory end, bind = function(k) return k end, share = function(k) return { share = k } end },
 }
 function import(name) return assert(namespaces[name], 'Unsupported namespace ' .. name) end
@@ -134,7 +156,7 @@ io.open = function(path)
 end
 dofile(pluginDir .. 'AnalyzeSelected.lua')
 io.open = realOpen
-assert(tables == 2 and dialogs == 3 and calls == 3, 'expected preflight, cancelled review, review and three analyses')
+assert(tables == 2 and dialogs == 3 and #sentContexts == 3, 'expected preflight, cancelled review, review and three analyses')
 assert(#confirms == 2 and confirms[1]:find('1 of 4', 1, true), 'RAW file should be skipped with consent, not block the batch')
 for i = 1, 3 do
     local names = table.concat(applied[i] or {}, '|')
@@ -168,8 +190,8 @@ assert(context:find('Property name for this photo, taken from its keywords: "Ram
 assert(sentPrompts[1]:find('Test remembered instruction', 1, true) and sentPrompts[1]:find('OUTPUT RULES', 1, true), 'prompt must end with the fixed output rules')
 -- Second run: switching to a provider without a saved key stops before any upload, keeping edits.
 missingKeyRun = true
-local callsBefore = calls
+local callsBefore = #sentContexts
 dofile(pluginDir .. 'AnalyzeSelected.lua')
-assert(#messages == 1 and calls == callsBefore, 'missing key should stop before analysis')
+assert(#messages == 1 and #sentContexts == callsBefore, 'missing key should stop before analysis')
 assert(prefs.provider == 'openai' and prefs.projectContext == 'Kept project facts', 'preflight edits should be kept')
 print('PASS: separate title/caption/alt text, existing keywords as facts minus IDs and credit, no duplicate suggestions, native Alt Text with fallback notice, missing-key guard keeps edits and sends nothing; contexts, RAW skipped with consent, prompt persistence, catalog previews, cancel confirmation, three rows, existing keywords reused, blank title preserved, rating opt-in, native colour assignment')

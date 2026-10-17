@@ -164,6 +164,7 @@ messages = {}
 local context = sentContexts[1]
 assert(context:find('Ramada Plaza Rize', 1, true) and context:find('Meeting Room', 1, true), 'existing keywords should be sent as facts')
 assert(not context:find('27137', 1, true) and not context:find('saleh mostafa', 1, true), 'job numbers and the photographer name must not be sent')
+assert(context:find('Property name for this photo, taken from its keywords: "Ramada Plaza Rize"', 1, true), 'the property name from the keywords must be named for the model')
 assert(sentPrompts[1]:find('Test remembered instruction', 1, true) and sentPrompts[1]:find('OUTPUT RULES', 1, true), 'prompt must end with the fixed output rules')
 -- Second run: switching to a provider without a saved key stops before any upload, keeping edits.
 missingKeyRun = true

@@ -56,6 +56,12 @@ local accented = Util.clip(string.rep('é', 300), 255)
 assert(Util.length(accented) == 255 and not accented:find('[\195][^\128-\191]'), 'clip split a UTF-8 character')
 assert(Util.clip('  short  ', 255) == 'short')
 
+-- Property name from a photo's own keywords ---------------------------------------------------
+-- Keywords from the real Ramada Plaza Rize photo (after credits and numbers are removed).
+assert(Util.propertyName({ 'Architecture', 'Exterior', 'Hotel', 'Interior', 'Photography', 'Ramada Plaza - EMEA', 'Ramada Plaza Rize', 'VRX Studios', 'Wyndham - EMEA' }) == 'Ramada Plaza Rize')
+assert(Util.propertyName({ 'Hotel Exterior', 'Meeting Room', 'Architecture', 'Ramada - EMEA' }) == nil, 'space and region keywords are not property names')
+assert(Util.propertyName({ 'Ramada by Wyndham Riyadh King Fahd Road', 'Riyadh' }) == 'Ramada by Wyndham Riyadh King Fahd Road')
+
 -- ProviderClient.normalise -------------------------------------------------------------------
 local normal = ProviderClient.normalise({
     title = ' Pool deck ', keywords = 'pool area, sun loungers, Pool Area', description = 'A pool.', confidence = 3,

@@ -71,6 +71,31 @@ function Util.localFileExists(path)
     return ok and attributes ~= nil
 end
 
+-- Words that mark a keyword as a space, role or subject rather than a property name.
+local genericWords = {
+    room = true, rooms = true, lobby = true, exterior = true, interior = true, bar = true, restaurant = true,
+    hotel = true, pool = true, suite = true, architecture = true, architectural = true, photography = true,
+    terrace = true, kitchen = true, spa = true, gym = true, meeting = true, dining = true, lounge = true,
+    facade = true, building = true, staff = true, chef = true, food = true, landscape = true, studios = true,
+    studio = true, emea = true, photographer = true, dusk = true, night = true,
+}
+
+-- Picks the most specific keyword that names a property, from a photo's own keywords.
+-- Returns nil when no keyword clearly names one; the review then leaves the choice to the photographer.
+function Util.propertyName(keywords)
+    local best
+    for _, keyword in ipairs(keywords or {}) do
+        local words, generic = 0, false
+        for word in keyword:gmatch('%S+') do
+            words = words + 1
+            local bare = (word:gsub('[%p]', ''))
+            if genericWords[string.lower(bare)] or word:match('^%d') or word == '-' then generic = true end
+        end
+        if not generic and words >= 2 and not keyword:find(' %- ') and (not best or #keyword > #best) then best = keyword end
+    end
+    return best
+end
+
 -- Number of UTF-8 characters (not bytes); Format and alt-text limits count characters.
 function Util.length(value)
     local _, count = tostring(value or ''):gsub('[^\128-\191]', '')

@@ -229,7 +229,11 @@ local function makeContext(photo, photoPath, existing)
     }
     if prefs.projectContext ~= '' then table.insert(pieces, 'Photographer-confirmed facts for this project: ' .. prefs.projectContext) end
     if prefs.useExistingKeywords and #existing > 0 then
-        table.insert(pieces, 'Existing keywords already on this photo (photographer-confirmed; use them for property, brand, venue and location names; do not repeat them as new keywords): ' .. table.concat(existing, ', '))
+        table.insert(pieces, 'Existing keywords already on this photo (photographer-confirmed; do not repeat them as new keywords): ' .. table.concat(existing, ', '))
+        local property = Util.propertyName(existing)
+        if property then
+            table.insert(pieces, 'Property name for this photo, taken from its keywords: "' .. property .. '". Use this exact name in the title and in the caption; use it in the alt text too when it fits.')
+        end
     end
     if prefs.folderHints then
         local hints = Util.folderHints(photoPath)
@@ -353,6 +357,12 @@ local function review(records, context, failureCount)
             if prefs.saveKeywords then
                 heading('New keywords (comma-separated)')
                 table.insert(fields, f:edit_field { value = bind('keywords' .. i), width = fieldWidth, height_in_lines = 2 })
+            end
+            if record.propertyName and (prefs.saveTitle or prefs.saveCaption or prefs.saveAltText) then
+                local used = (record.title .. ' ' .. record.caption .. ' ' .. record.altText):lower()
+                if not used:find(record.propertyName:lower(), 1, true) then
+                    table.insert(fields, f:static_text { title = '⚠ Property name "' .. record.propertyName .. '" from the keywords is not in the text. Add it if it belongs.', width = fieldWidth, height_in_lines = 2 })
+                end
             end
             if #(record.existingKeywords or {}) > 0 then
                 table.insert(fields, f:static_text { title = 'Already on photo: ' .. table.concat(record.existingKeywords, ', '), width = fieldWidth, height_in_lines = 2, enabled = false })
@@ -540,6 +550,7 @@ LrTasks.startAsyncTask(function()
                 local existing = existingKeywords(photo)
                 local analysis = ProviderClient.analyse(settings, base64, makeContext(photo, path, existing))
                 analysis.existingKeywords = existing
+                analysis.propertyName = Util.propertyName(existing)
                 analysis.keywords = withoutExisting(analysis.keywords, existing)
                 pcall(LrFileUtils.delete, previewPath)
                 previewPath = nil

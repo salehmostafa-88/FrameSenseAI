@@ -25,7 +25,7 @@ All notable changes are documented here.
 - Existing keywords were never read: the catalog read ran inside a plain `pcall`, which cannot be yielded across in Lightroom. Reads now use `LrTasks.pcall`, fall back to the keyword names, and report a read error on the card.
 - The analyse dialog shows the keywords and property name found before any provider cost; each review card has **Show what was sent**.
 - The property name recognised from the keywords is added to a title that lacks it.
-- Alt text asks for a richer description (about 120–200 characters) naming three to five distinctive features plus the property and city.
+- Alt text follows Format's Image Description guidance: one concise natural sentence (about 80–150 characters, hard limit 255), main subject first, only clearly visible details, the property named only where natural, no keyword lists. The review counter flags more than two commas.
 - Dialog titles show the build number.
 
 ### Title, caption and alt text

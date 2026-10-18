@@ -96,7 +96,7 @@ local separate = ProviderClient.normalise({
 })
 assert(separate.title == 'Hotel Exterior at Dusk - Ramada by Wyndham Riyadh King Fahd Road, Riyadh, KSA', 'title keeps its full name and loses the full stop')
 assert(separate.caption:find('^Dusk') and separate.altText:find('^Hotel tower'), 'caption and alt text must stay separate')
-assert(Util.length(ProviderClient.normalise({ alt_text = string.rep('word ', 80) }).altText) <= 250, 'alt text is limited to 250 characters')
+assert(Util.length(ProviderClient.normalise({ alt_text = string.rep('word ', 80) }).altText) <= 255, 'alt text is limited to Format’s 255 characters')
 assert(#ProviderClient.normalise({ keywords = {}, caption = 'x' }).keywords == 0, 'a caption alone is still usable')
 expectError(function() ProviderClient.normalise({ keywords = {}, title = ' ', caption = ' ', alt_text = '' }) end, 'no usable metadata')
 

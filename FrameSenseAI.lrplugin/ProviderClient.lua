@@ -59,7 +59,7 @@ function Client.normalise(result)
     -- Older prompts returned one combined "description"; use it for whichever field is missing.
     local legacy = safeString(result.description)
     local caption = Util.clip(safeString(result.caption) ~= '' and safeString(result.caption) or legacy, 500)
-    local altText = Util.clip(safeString(result.alt_text) ~= '' and safeString(result.alt_text) or legacy, 250)
+    local altText = Util.clip(safeString(result.alt_text) ~= '' and safeString(result.alt_text) or legacy, 255)
     local title = Util.clip(safeString(result.title), 120):gsub('%.$', '')
     if title == '' and caption == '' and altText == '' and #keywords == 0 then error('The provider returned no usable metadata.') end
     local portfolio = type(result.portfolio) == 'table' and result.portfolio or {}

@@ -15,7 +15,7 @@ For 1–50 selected, locally available JPEGs, FrameSense AI:
 3. Proposes three separate texts plus keywords, a confidence indicator and a portfolio-usefulness suggestion:
    - **Title** — the one line under the photo on your website: `Space - Property, City, Country`, for example `Hotel Exterior at Dusk - Ramada by Wyndham Riyadh King Fahd Road, Riyadh, KSA`.
    - **Caption** — one or two ready-to-post sentences for sharing the photo online.
-   - **Alt text** — a plain, specific description for search engines and screen readers, ideally 80–125 characters, saved to Lightroom's own **Alt Text** field.
+   - **Alt text** — a plain, specific description for search engines and screen readers, following Format's Image Description guidance (one concise natural sentence, about 80–150 characters, never over Format's 255-character limit), saved to Lightroom's own **Alt Text** field.
    - **Keywords** — 6–12 new, frame-specific keywords that are not already on the photo.
 4. Presents all results in one scrollable multi-image review list.
 5. Saves only the rows you approve, then remembers the approved vocabulary under the named learning profile on your own Mac.

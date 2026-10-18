@@ -2,7 +2,7 @@ local Defaults = {}
 
 -- Shown in every dialog title so a test run shows which build Lightroom loaded.
 -- Keep in step with VERSION in Info.lua (tests/core.lua checks this).
-Defaults.version = '0.3.0 build 6'
+Defaults.version = '0.3.0 build 7'
 
 -- Editable guidance shown in the analyse dialog. The output rules below are always
 -- appended by the plug-in, so an edited prompt cannot change the JSON contract.
@@ -25,7 +25,7 @@ title: the one line shown under the photo on a website, at most 90 characters, i
 
 caption: a ready-to-post caption for publishing the photo online, such as under a gallery image or in a social post. One or two natural, inviting sentences, at most 300 characters, saying what makes this frame worth looking at, and naming the property and location when confirmed. Factual: no invented amenities, claims or superlatives, no hashtags, no emoji.
 
-alt_text: alternative text for search engines and screen readers. One rich, specific, descriptive sentence of about 120 to 200 characters (never more than 250). Start with the view and main subject, then name three to five of the most distinctive visible features — architectural elements, materials, lighting, setting and time of day — and include the confirmed property name and city naturally. Example: "Exterior view of Ramada Plaza Rize at dusk, a multi-storey hotel tower with a curved glass facade, arched entrance canopy and dramatic sunset sky." Do not begin with "Image of" or "Photo of", do not list keywords and do not use promotional words.
+alt_text: Format's "Image Description" (alt text) for screen readers and search engines. Write one concise, natural sentence that would let someone with their eyes shut picture the photo: the main subject first, then the one or two details that matter most, such as setting, light or time of day. Aim for about 80 to 150 characters; never more than 255. Name the confirmed property, and the city if there is room, only where it reads naturally. Describe only what is clearly visible — an incorrect description is worse than none. No keyword lists, no strings of commas, no promotional words, and never begin with "Image of" or "Picture of". Example: "Ramada Plaza Rize hotel tower lit up at dusk, its curved glass entrance glowing beneath a pink and violet sky."
 
 keywords: 6 to 12 concise, flat, lower-case keywords for visible content that is NOT already in the photo's existing keywords. The first is the primary visible category.
 

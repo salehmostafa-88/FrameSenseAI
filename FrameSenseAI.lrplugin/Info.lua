@@ -5,7 +5,7 @@ return {
     LrPluginName = 'FrameSense AI',
     LrPluginInfoProvider = 'PluginInfo.lua',
     LrMetadataProvider = 'MetadataProvider.lua',
-    VERSION = { major = 0, minor = 3, revision = 0, build = 6 },
+    VERSION = { major = 0, minor = 3, revision = 0, build = 7 },
     LrLibraryMenuItems = {
         { title = 'Analyze selected JPEGs with FrameSense AI', file = 'AnalyzeSelected.lua' },
     },

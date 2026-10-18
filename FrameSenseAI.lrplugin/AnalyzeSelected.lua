@@ -316,10 +316,13 @@ local function review(records, context, failureCount, costLine)
         property.selectedSummary = selected .. ' of ' .. #records .. ' photos will be saved.'
     end
     -- Live character counters: ideal is advice, limit is where saving shortens the text.
-    local function counter(key, ideal, limit)
+    -- maxCommas flags keyword-list style text, which Format's guidance warns against.
+    local function counter(key, ideal, limit, maxCommas)
         return bind { key = key, transform = function(value)
             local count = Util.length(Util.trim(value))
             if count > limit then return count .. ' / ' .. limit .. ' — will be shortened' end
+            local _, commas = tostring(value or ''):gsub(',', '')
+            if maxCommas and commas > maxCommas then return count .. ' — too many commas' end
             if count > ideal then return count .. ' characters — aim for ' .. ideal end
             return count .. ' / ' .. ideal
         end }
@@ -378,7 +381,7 @@ local function review(records, context, failureCount, costLine)
                 table.insert(fields, f:edit_field { value = bind('caption' .. i), width = fieldWidth, height_in_lines = 3 })
             end
             if prefs.saveAltText then
-                heading('Alt text — for search engines', counter('altText' .. i, 200, 250))
+                heading('Alt text — Format Image Description', counter('altText' .. i, 150, 255, 2))
                 table.insert(fields, f:edit_field { value = bind('altText' .. i), width = fieldWidth, height_in_lines = 3 })
             end
             if prefs.saveKeywords then
@@ -453,7 +456,7 @@ local function review(records, context, failureCount, costLine)
         record.title = Util.trim(property['title' .. i])
         record.keywords = withoutExisting(Util.unique(Util.split(property['keywords' .. i], ',')), record.existingKeywords)
         record.caption = Util.clip(property['caption' .. i], 500)
-        record.altText = Util.clip(property['altText' .. i], 250)
+        record.altText = Util.clip(property['altText' .. i], 255)
         record.portfolio.score = tonumber(property['score' .. i]) or 3
         record.portfolio.label = labels[property['score' .. i]] or 'Supporting'
     end

@@ -117,6 +117,8 @@ local namespaces = {
     assert(findText(spec.contents, 'Already on photo: Hotel, Meeting Room, Ramada Plaza Rize'), 'existing keywords were not read')
     assert(not findText(spec.contents, '⚠ Could not read'), 'keyword read reported an error')
     assert(findKind(spec.contents, 'push_button') >= 5, 'each card needs a Show what was sent button')
+    -- 3 photos x (2,000 in + 1,000 out) on Gemini 3.5 Flash ($1.50 / $9.00 per 1M) = $0.036.
+    assert(findText(spec.contents, 'Check and correct').title:find('Cost of this run: about $0.04 (6000 input + 3000 output tokens on Gemini 3.5 Flash)', 1, true), 'run cost missing from review')
     local feedback = assert(findText(spec.contents, 'Strong composition'), 'portfolio feedback missing')
     assert(feedback.height_in_lines >= 4, 'feedback box too short for its text')
     assert(findKind(spec.contents, 'group_box') >= 3, 'missing review rows')
@@ -154,8 +156,9 @@ package.loaded.LearningStore = { get = function() return {} end, remember = func
 local sentContexts, sentPrompts = {}, {}
 package.loaded.ProviderClient = { analyse = function(settings, _, context)
     table.insert(sentContexts, context); table.insert(sentPrompts, settings.prompt)
-    return { title = 'Test title', keywords = {'restaurant interior', 'banquette seating', 'hotel'}, caption = 'Test caption', altText = 'Test alt text', confidence = .9, portfolio = {score = 3, strengths = {'Strong composition'}, cautions = {'Crop is tight'}} }
-end }
+    return { title = 'Test title', keywords = {'restaurant interior', 'banquette seating', 'hotel'}, caption = 'Test caption', altText = 'Test alt text', confidence = .9, portfolio = {score = 3, strengths = {'Strong composition'}, cautions = {'Crop is tight'}} },
+        { promptTokenCount = 2000, candidatesTokenCount = 300, thoughtsTokenCount = 700 }
+end, tokenCounts = function(_, usage) return usage.promptTokenCount, usage.candidatesTokenCount + usage.thoughtsTokenCount end }
 prefs.sharedTags = 'Banquette Seating, Test Resort'
 _PLUGIN = {}
 local realOpen = io.open

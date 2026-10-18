@@ -19,6 +19,15 @@ All notable changes are documented here.
 - Network failures report the error instead of stopping with a Lua comparison error.
 - The mocked tests no longer depend on the repository folder being named `framesense-ai-lightroom`.
 
+### Cost and keyword fixes
+
+- The review shows the cost of each run from the provider's own token counts (Gemini thinking tokens count as output) and the listed model prices, plus a running total.
+- Existing keywords were never read: the catalog read ran inside a plain `pcall`, which cannot be yielded across in Lightroom. Reads now use `LrTasks.pcall`, fall back to the keyword names, and report a read error on the card.
+- The analyse dialog shows the keywords and property name found before any provider cost; each review card has **Show what was sent**.
+- The property name recognised from the keywords is added to a title that lacks it.
+- Alt text asks for a richer description (about 120–200 characters) naming three to five distinctive features plus the property and city.
+- Dialog titles show the build number.
+
 ### Title, caption and alt text
 
 - Title, caption and alt text are now three separate fields with separate jobs: a website title line (`Space - Property, City, Country`), a ready-to-post caption and a descriptive alt text for search engines. Each can be turned on or off under What to create, and each has its own live character counter in the review.

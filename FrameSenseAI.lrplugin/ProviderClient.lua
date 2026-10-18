@@ -104,6 +104,14 @@ function Client.checkConnection(provider, key, model)
     return false, '✗ Could not reach ' .. info .. '. Check the internet connection.'
 end
 
+-- Input and output token counts from a provider's usage block. Gemini bills thinking
+-- tokens as output; OpenAI already includes reasoning tokens in completion_tokens.
+function Client.tokenCounts(provider, usage)
+    if type(usage) ~= 'table' then return 0, 0 end
+    if provider == 'openai' then return tonumber(usage.prompt_tokens) or 0, tonumber(usage.completion_tokens) or 0 end
+    return tonumber(usage.promptTokenCount) or 0, (tonumber(usage.candidatesTokenCount) or 0) + (tonumber(usage.thoughtsTokenCount) or 0)
+end
+
 -- GPT-5 and o-series reasoning models reject any temperature other than the default.
 function Client.acceptsTemperature(model)
     model = string.lower(model or '')

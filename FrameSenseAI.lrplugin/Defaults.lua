@@ -2,7 +2,7 @@ local Defaults = {}
 
 -- Shown in every dialog title so a test run shows which build Lightroom loaded.
 -- Keep in step with VERSION in Info.lua (tests/core.lua checks this).
-Defaults.version = '0.3.0 build 5'
+Defaults.version = '0.3.0 build 6'
 
 -- Editable guidance shown in the analyse dialog. The output rules below are always
 -- appended by the plug-in, so an edited prompt cannot change the JSON contract.
@@ -25,7 +25,7 @@ title: the one line shown under the photo on a website, at most 90 characters, i
 
 caption: a ready-to-post caption for publishing the photo online, such as under a gallery image or in a social post. One or two natural, inviting sentences, at most 300 characters, saying what makes this frame worth looking at, and naming the property and location when confirmed. Factual: no invented amenities, claims or superlatives, no hashtags, no emoji.
 
-alt_text: alternative text for search engines and screen readers. One plain, specific, descriptive sentence, ideally 80 to 125 characters and never more than 250, with the main subject first, naturally including the confirmed property name and city when they fit. Do not begin with "Image of" or "Photo of" and do not list keywords.
+alt_text: alternative text for search engines and screen readers. One rich, specific, descriptive sentence of about 120 to 200 characters (never more than 250). Start with the view and main subject, then name three to five of the most distinctive visible features — architectural elements, materials, lighting, setting and time of day — and include the confirmed property name and city naturally. Example: "Exterior view of Ramada Plaza Rize at dusk, a multi-storey hotel tower with a curved glass facade, arched entrance canopy and dramatic sunset sky." Do not begin with "Image of" or "Photo of", do not list keywords and do not use promotional words.
 
 keywords: 6 to 12 concise, flat, lower-case keywords for visible content that is NOT already in the photo's existing keywords. The first is the primary visible category.
 
@@ -106,6 +106,18 @@ function Defaults.modelInfo(provider, value)
     for _, model in ipairs(Defaults.models[provider] or {}) do
         if model.value == value then return model end
     end
+end
+
+-- Cost in US$ of one call, from the token counts the provider reports; nil for an unknown model.
+function Defaults.costFor(provider, value, inputTokens, outputTokens)
+    local model = Defaults.modelInfo(provider, value)
+    if not model then return nil end
+    return ((inputTokens or 0) * model.input + (outputTokens or 0) * model.output) / 1000000
+end
+
+function Defaults.formatCost(dollars)
+    if dollars < 0.01 then return string.format('$%.4f', dollars) end
+    return string.format('$%.2f', dollars)
 end
 
 function Defaults.estimatePer100(model)

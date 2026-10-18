@@ -61,6 +61,16 @@ local info = dofile(testDir .. '/../FrameSenseAI.lrplugin/Info.lua')
 local Defaults = require 'Defaults'
 assert(Defaults.version == string.format('%d.%d.%d build %d', info.VERSION.major, info.VERSION.minor, info.VERSION.revision, info.VERSION.build), 'Defaults.version must match Info.lua')
 
+-- Token counts and cost -------------------------------------------------------------------------
+local inTokens, outTokens = ProviderClient.tokenCounts('gemini', { promptTokenCount = 1800, candidatesTokenCount = 250, thoughtsTokenCount = 900 })
+assert(inTokens == 1800 and outTokens == 1150, 'Gemini thinking tokens are billed as output')
+inTokens, outTokens = ProviderClient.tokenCounts('openai', { prompt_tokens = 1500, completion_tokens = 400 })
+assert(inTokens == 1500 and outTokens == 400)
+assert(select(2, ProviderClient.tokenCounts('gemini', nil)) == 0)
+assert(math.abs(Defaults.costFor('gemini', 'gemini-3.5-flash', 1800, 1150) - 0.01305) < 1e-9)
+assert(Defaults.costFor('gemini', 'unknown-model', 1, 1) == nil)
+assert(Defaults.formatCost(0.01305) == '$0.01' and Defaults.formatCost(0.0042) == '$0.0042')
+
 -- Property name from a photo's own keywords ---------------------------------------------------
 -- Keywords from the real Ramada Plaza Rize photo (after credits and numbers are removed).
 assert(Util.propertyName({ 'Architecture', 'Exterior', 'Hotel', 'Interior', 'Photography', 'Ramada Plaza - EMEA', 'Ramada Plaza Rize', 'VRX Studios', 'Wyndham - EMEA' }) == 'Ramada Plaza Rize')

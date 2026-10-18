@@ -305,7 +305,7 @@ local function reviewSize()
     return width, height
 end
 
-local function review(records, context, failureCount)
+local function review(records, context, failureCount, costLine)
     local f = LrView.osFactory()
     local bind = LrView.bind
     local property = LrBinding.makePropertyTable(context)
@@ -349,7 +349,9 @@ local function review(records, context, failureCount)
     updateSelectedCount()
     local width, height = reviewSize()
     local intro = 'Check and correct each suggestion, untick any photo you do not want saved, then choose Save.'
-    if (failureCount or 0) > 0 then intro = intro .. '\n' .. failureCount .. ' photo(s) could not be analysed; details are shown after this review.' end
+    local introLines = 1
+    if (failureCount or 0) > 0 then intro = intro .. '\n' .. failureCount .. ' photo(s) could not be analysed; details are shown after this review.'; introLines = introLines + 1 end
+    if costLine then intro = intro .. '\n' .. costLine; introLines = introLines + 1 end
     local fieldWidth, sideWidth = 440, 220
 
     -- Views are rebuilt for each presentation; all edits live in the property table.
@@ -376,7 +378,7 @@ local function review(records, context, failureCount)
                 table.insert(fields, f:edit_field { value = bind('caption' .. i), width = fieldWidth, height_in_lines = 3 })
             end
             if prefs.saveAltText then
-                heading('Alt text — for search engines', counter('altText' .. i, 125, 250))
+                heading('Alt text — for search engines', counter('altText' .. i, 200, 250))
                 table.insert(fields, f:edit_field { value = bind('altText' .. i), width = fieldWidth, height_in_lines = 3 })
             end
             if prefs.saveKeywords then
@@ -433,7 +435,7 @@ local function review(records, context, failureCount)
         return f:column {
             bind_to_object = property,
             spacing = f:control_spacing(),
-            f:static_text { title = intro, width = width, height_in_lines = (failureCount or 0) > 0 and 2 or 1 },
+            f:static_text { title = intro, width = width, height_in_lines = introLines },
             f:row(toolbar),
             f:scrolled_view { width = width, height = height, horizontal_scroller = true, vertical_scroller = true, f:column(rows) },
         }
@@ -593,6 +595,7 @@ LrTasks.startAsyncTask(function()
         if not settings then return end
         local scope = LrProgressScope { title = 'FrameSense AI is analysing selected JPEGs', functionContext = context }
         local records, failures = {}, {}
+        local tokensIn, tokensOut = 0, 0
         for i, photo in ipairs(photos) do
             if scope:isCanceled() then break end
             local path = photo:getRawMetadata('path') or ''
@@ -604,7 +607,9 @@ LrTasks.startAsyncTask(function()
                 base64, previewPath = renderDerivative(photo, context)
                 local existing, keywordError = existingByPhoto[photo].keywords, existingByPhoto[photo].error
                 local sentContext = makeContext(photo, path, existing)
-                local analysis = ProviderClient.analyse(settings, base64, sentContext)
+                local analysis, usage = ProviderClient.analyse(settings, base64, sentContext)
+                local input, output = ProviderClient.tokenCounts(settings.provider, usage)
+                tokensIn, tokensOut = tokensIn + input, tokensOut + output
                 analysis.sentContext = sentContext
                 analysis.existingKeywords = existing
                 analysis.keywordError = keywordError
@@ -628,12 +633,22 @@ LrTasks.startAsyncTask(function()
             if i < #photos then LrTasks.sleep(prefs.batchDelayMs / 1000) end
         end
         scope:done()
+        -- Cost from the provider's own token counts and the listed prices; kept as a running total.
+        local costLine
+        local model = settings.provider == 'openai' and settings.openaiModel or settings.geminiModel
+        local cost = Defaults.costFor(settings.provider, model, tokensIn, tokensOut)
+        if cost and tokensIn + tokensOut > 0 then
+            prefs.spentTotal = (tonumber(prefs.spentTotal) or 0) + cost
+            if not prefs.spentSince then prefs.spentSince = os.date('%d %b %Y') end
+            costLine = string.format('Cost of this run: about %s (%d input + %d output tokens on %s). Total since %s: about %s.',
+                Defaults.formatCost(cost), tokensIn, tokensOut, Defaults.modelInfo(settings.provider, model).name, prefs.spentSince, Defaults.formatCost(prefs.spentTotal))
+        end
         if #records > 0 then
-            local reviewed = review(records, context, #failures)
+            local reviewed = review(records, context, #failures, costLine)
             if reviewed then save(reviewed) end
         end
         deletePreviews(records)
-        if #failures > 0 then LrDialogs.message('FrameSense AI — some images were not analysed', table.concat(failures, '\n\n'), 'warning') end
+        if #failures > 0 then LrDialogs.message('FrameSense AI — some images were not analysed', table.concat(failures, '\n\n') .. (costLine and ('\n\n' .. costLine) or ''), 'warning') end
         if #records == 0 and #failures == 0 then LrDialogs.message('FrameSense AI', 'No images were analysed.') end
     end)
 end)

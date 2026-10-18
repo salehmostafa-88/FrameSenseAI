@@ -56,6 +56,11 @@ local accented = Util.clip(string.rep('é', 300), 255)
 assert(Util.length(accented) == 255 and not accented:find('[\195][^\128-\191]'), 'clip split a UTF-8 character')
 assert(Util.clip('  short  ', 255) == 'short')
 
+-- Version label matches Info.lua ---------------------------------------------------------------
+local info = dofile(testDir .. '/../FrameSenseAI.lrplugin/Info.lua')
+local Defaults = require 'Defaults'
+assert(Defaults.version == string.format('%d.%d.%d build %d', info.VERSION.major, info.VERSION.minor, info.VERSION.revision, info.VERSION.build), 'Defaults.version must match Info.lua')
+
 -- Property name from a photo's own keywords ---------------------------------------------------
 -- Keywords from the real Ramada Plaza Rize photo (after credits and numbers are removed).
 assert(Util.propertyName({ 'Architecture', 'Exterior', 'Hotel', 'Interior', 'Photography', 'Ramada Plaza - EMEA', 'Ramada Plaza Rize', 'VRX Studios', 'Wyndham - EMEA' }) == 'Ramada Plaza Rize')
@@ -86,7 +91,6 @@ assert(#ProviderClient.normalise({ keywords = {}, caption = 'x' }).keywords == 0
 expectError(function() ProviderClient.normalise({ keywords = {}, title = ' ', caption = ' ', alt_text = '' }) end, 'no usable metadata')
 
 -- Defaults: prompt contract and upgrade of the old standard prompt ---------------------------
-local Defaults = require 'Defaults'
 local full = Defaults.fullPrompt('My guidance.')
 assert(full:find('^My guidance%.') and full:find('"alt_text"', 1, true) and full:find('"caption"', 1, true), 'output rules must always be appended')
 local oldStandard = Defaults.legacyPrompts[1]

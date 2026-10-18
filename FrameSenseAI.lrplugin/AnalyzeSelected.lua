@@ -34,7 +34,7 @@ local function keySaved(provider)
     return Util.trim(prefs[provider .. 'ApiKey']) ~= ''
 end
 
-local function preflight(photos, context)
+local function preflight(photos, context, keywordSummary)
     local f = LrView.osFactory()
     local bind, share = LrView.bind, LrView.share
     local property = LrBinding.makePropertyTable(context)
@@ -124,6 +124,7 @@ local function preflight(photos, context)
                     f:checkbox { value = bind 'useExistingKeywords', title = 'Use each photo’s keywords as confirmed facts' },
                     help('Existing keywords', 'Sends the keywords already on each photo so the AI can take the property, brand and location names from them (for example "Ramada by Wyndham Riyadh King Fahd Road", "Riyadh") and avoid suggesting them again.\n\nPurely numeric keywords such as job numbers, and your own Creator / Copyright name, are never sent.'),
                 },
+                indented(f:static_text { title = keywordSummary, enabled = bind 'useExistingKeywords', width = fieldWidth, height_in_lines = 2 }),
                 f:row {
                     label('Keywords for every photo'),
                     f:edit_field { value = bind 'sharedTags', width = fieldWidth },
@@ -159,7 +160,7 @@ local function preflight(photos, context)
         },
         f:static_text { title = 'Privacy: a temporary 1600px JPEG copy without metadata and its filename are sent, plus the facts, folder names and existing keywords you allow above. Folder paths and GPS are never sent.', width = fieldWidth + 180, height_in_lines = 2 },
     }
-    if LrDialogs.presentModalDialog { title = 'FrameSense AI — analyse ' .. #photos .. ' photo' .. (#photos == 1 and '' or 's'), contents = dialog, actionVerb = 'Analyse' } ~= 'ok' then return nil end
+    if LrDialogs.presentModalDialog { title = 'FrameSense AI ' .. Defaults.version .. ' — analyse ' .. #photos .. ' photo' .. (#photos == 1 and '' or 's'), contents = dialog, actionVerb = 'Analyse' } ~= 'ok' then return nil end
 
     prefs.provider = property.provider
     prefs.geminiModel = property.geminiModel
@@ -410,6 +411,9 @@ local function review(records, context, failureCount)
                     f:column {
                         f:checkbox { value = bind('enabled' .. i), title = 'Save this photo' },
                         f:catalog_photo { photo = record.photo, width = 260, height = 173, frame_width = 1 },
+                        f:push_button { title = 'Show what was sent', action = function()
+                            LrDialogs.message('Sent to the AI with ' .. record.filename, (record.sentContext or '') .. '\n\n(The image itself and the analysis prompt were also sent.)', 'info')
+                        end },
                     },
                     f:column(fields),
                     f:column(side),
@@ -435,7 +439,7 @@ local function review(records, context, failureCount)
         }
     end
     -- The analysis has already been paid for, so Cancel/Esc asks before discarding it.
-    while LrDialogs.presentModalDialog { title = 'FrameSense AI — review ' .. #records .. ' photos', contents = buildContents(), actionVerb = 'Save', cancelVerb = 'Discard…' } ~= 'ok' do
+    while LrDialogs.presentModalDialog { title = 'FrameSense AI ' .. Defaults.version .. ' — review ' .. #records .. ' photo' .. (#records == 1 and '' or 's'), contents = buildContents(), actionVerb = 'Save', cancelVerb = 'Discard…' } ~= 'ok' do
         if LrDialogs.confirm('Discard all ' .. #records .. ' AI suggestions?', 'Nothing will be saved to the catalogue. Running the analysis again will send the photos to the provider again.', 'Discard', 'Back to review') == 'ok' then return nil end
     end
     prefs.applyRatings = prefs.generatePortfolio and property.applyRatings and true or false
@@ -564,7 +568,28 @@ LrTasks.startAsyncTask(function()
     LrFunctionContext.callWithContext('FrameSenseAnalyse', function(context)
         local photos = validate(LrApplication.activeCatalog():getTargetPhotos())
         if not photos then return end
-        local settings = preflight(photos, context)
+        -- Read each photo's keywords before anything is sent, so the analyse dialog can show
+        -- what was found (or why reading failed) before any provider cost is incurred.
+        local existingByPhoto, propertyNames, readErrors, withKeywords = {}, {}, {}, 0
+        for _, photo in ipairs(photos) do
+            local existing, keywordError = existingKeywords(photo)
+            existingByPhoto[photo] = { keywords = existing, error = keywordError }
+            if #existing > 0 then withKeywords = withKeywords + 1 end
+            if keywordError then table.insert(readErrors, keywordError) end
+            local name = Util.propertyName(existing)
+            if name then table.insert(propertyNames, name) end
+        end
+        propertyNames = Util.unique(propertyNames)
+        local keywordSummary
+        if #readErrors > 0 then
+            keywordSummary = '⚠ Could not read keywords: ' .. readErrors[1]
+        elseif withKeywords == 0 then
+            keywordSummary = 'No keywords found on the selected photo' .. (#photos == 1 and '' or 's') .. '.'
+        else
+            keywordSummary = 'Keywords found on ' .. withKeywords .. ' of ' .. #photos .. ' photo' .. (#photos == 1 and '' or 's') .. '. '
+                .. (#propertyNames > 0 and ('Property name from keywords: ' .. table.concat(propertyNames, ', ', 1, math.min(#propertyNames, 3)) .. '.') or 'No property name recognised in them.')
+        end
+        local settings = preflight(photos, context, keywordSummary)
         if not settings then return end
         local scope = LrProgressScope { title = 'FrameSense AI is analysing selected JPEGs', functionContext = context }
         local records, failures = {}, {}
@@ -577,11 +602,17 @@ LrTasks.startAsyncTask(function()
             local ok, result = LrTasks.pcall(function()
                 local base64
                 base64, previewPath = renderDerivative(photo, context)
-                local existing, keywordError = existingKeywords(photo)
-                local analysis = ProviderClient.analyse(settings, base64, makeContext(photo, path, existing))
+                local existing, keywordError = existingByPhoto[photo].keywords, existingByPhoto[photo].error
+                local sentContext = makeContext(photo, path, existing)
+                local analysis = ProviderClient.analyse(settings, base64, sentContext)
+                analysis.sentContext = sentContext
                 analysis.existingKeywords = existing
                 analysis.keywordError = keywordError
-                analysis.propertyName = Util.propertyName(existing)
+                analysis.propertyName = prefs.useExistingKeywords and Util.propertyName(existing) or nil
+                -- The title format is "Space - Property": add the property name when the AI left it out.
+                if analysis.propertyName and analysis.title ~= '' and not analysis.title:lower():find(analysis.propertyName:lower(), 1, true) then
+                    analysis.title = analysis.title .. ' - ' .. analysis.propertyName
+                end
                 analysis.keywords = withoutExisting(analysis.keywords, existing)
                 pcall(LrFileUtils.delete, previewPath)
                 previewPath = nil

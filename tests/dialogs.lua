@@ -91,10 +91,18 @@ local namespaces = {
         assert(findKind(spec.contents, 'popup_menu') >= 3, 'provider and model menus missing from preflight')
         assert(p.analysisPrompt and p.analysisPrompt:find('frame%-specific'))
         assert(p.folderPreview:find('Restaurant', 1, true))
+        assert(spec.title:find('0.3.0 build', 1, true), 'dialog title should show the build')
+        local function anyText(node, needle)
+            if type(node) ~= 'table' then return false end
+            if node.kind == 'static_text' and type(node.title) == 'string' and node.title:find(needle, 1, true) then return true end
+            for _, child in pairs(node) do if anyText(child, needle) then return true end end
+            return false
+        end
+        assert(anyText(spec.contents, 'Keywords found on 3 of 3 photos. Property name from keywords: Ramada Plaza Rize.'), 'preflight should show the keywords it found')
         p.analysisPrompt = p.analysisPrompt .. '\nTest remembered instruction.'
         return 'ok'
     end
-    assert(p.title1 == 'Test title' and p.title3 == 'Test title')
+    assert(p.title1 == 'Test title - Ramada Plaza Rize' and p.title3 == 'Test title - Ramada Plaza Rize', 'property name should be added to a title that lacks it')
     assert(p.selectedSummary:find('3 of 3', 1, true), 'missing live selection summary')
     if reviewCancels == 0 then reviewCancels = 1; return 'cancel' end -- first Cancel is withdrawn at the confirmation
     p.title2 = '   ' -- a cleared title must not wipe the existing catalogue title
@@ -108,6 +116,7 @@ local namespaces = {
     end
     assert(findText(spec.contents, 'Already on photo: Hotel, Meeting Room, Ramada Plaza Rize'), 'existing keywords were not read')
     assert(not findText(spec.contents, '⚠ Could not read'), 'keyword read reported an error')
+    assert(findKind(spec.contents, 'push_button') >= 5, 'each card needs a Show what was sent button')
     local feedback = assert(findText(spec.contents, 'Strong composition'), 'portfolio feedback missing')
     assert(feedback.height_in_lines >= 4, 'feedback box too short for its text')
     assert(findKind(spec.contents, 'group_box') >= 3, 'missing review rows')

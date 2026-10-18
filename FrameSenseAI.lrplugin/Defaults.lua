@@ -1,5 +1,9 @@
 local Defaults = {}
 
+-- Shown in every dialog title so a test run shows which build Lightroom loaded.
+-- Keep in step with VERSION in Info.lua (tests/core.lua checks this).
+Defaults.version = '0.3.0 build 5'
+
 -- Editable guidance shown in the analyse dialog. The output rules below are always
 -- appended by the plug-in, so an edited prompt cannot change the JSON contract.
 Defaults.defaultPrompt = [[You create factual, frame-specific metadata for a professional hospitality, interior and architecture photographer's archive and website.
